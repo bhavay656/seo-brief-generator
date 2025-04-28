@@ -116,8 +116,8 @@ Only use the data from the URLs. Do not assume anything not shown.
     return response.choices[0].message.content
 
 # -------------------- STREAMLIT APP --------------------
-st.set_page_config(page_title="SEO Content Brief Generator", page_icon="🚀")
-st.title("\ud83d\ude80 SEO Content Brief Generator")
+st.set_page_config(page_title="SEO Content Brief Generator")
+st.title("SEO Content Brief Generator")
 
 openai_api_key = st.text_input("Enter your OpenAI API Key:", type="password")
 scraperapi_key = st.text_input("Enter your ScraperAPI Key:", type="password")
