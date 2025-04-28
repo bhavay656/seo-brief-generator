@@ -15,8 +15,8 @@ st.title("SEO Content Brief Generator")
 user_openai_key = st.text_input("Enter your OpenAI API Key (Required)", type="password")
 scraperapi_key = st.text_input("Enter your ScraperAPI Key (Required)", type="password")
 company_name = st.text_input("Enter your Company Name (Required)", "")
-company_website = st.text_input("Enter your Company Website URL (example: gocomet.com)", "")
-sitemap_url = st.text_input("Enter your Sitemap URL (example: https://gocomet.com/sitemap.xml)", "")
+company_website = st.text_input("Enter your Company Website URL (example: yourwebsite.com)", "")
+sitemap_urls_input = st.text_input("Enter one or multiple Sitemap URLs (comma-separated)", "")
 target_keyword = st.text_input("Enter the Target Keyword (Required)", "")
 
 submit = st.button("Generate SEO Brief")
@@ -56,66 +56,69 @@ def get_top_bing_urls(keyword):
                 break
 
         return urls
-    except Exception as e:
+    except Exception:
         return []
 
-# Scrape Sitemap and filter URLs
-def fetch_valid_sitemap_urls(sitemap_url):
+# Fetch multiple sitemap URLs
+def fetch_valid_sitemap_urls(sitemap_urls):
+    valid_urls = []
     try:
-        response = requests.get(sitemap_url, timeout=15)
-        urls = []
-        if response.status_code == 200:
-            root = ET.fromstring(response.content)
-            for url in root.iter("{http://www.sitemaps.org/schemas/sitemap/0.9}loc"):
-                urls.append(url.text.strip())
+        sitemaps = [url.strip() for url in sitemap_urls.split(",") if url.strip()]
+        for sitemap_url in sitemaps:
+            response = requests.get(sitemap_url, timeout=15)
+            if response.status_code == 200:
+                root = ET.fromstring(response.content)
+                for url in root.iter("{http://www.sitemaps.org/schemas/sitemap/0.9}loc"):
+                    loc = url.text.strip()
+                    try:
+                        check = requests.get(loc, timeout=10)
+                        if check.status_code == 200:
+                            valid_urls.append(loc)
+                    except:
+                        continue
+    except Exception:
+        pass
+    return valid_urls
 
-        valid_urls = []
-        for url in urls:
-            try:
-                check = requests.get(url, timeout=10)
-                if check.status_code == 200:
-                    valid_urls.append(url)
-            except:
-                continue
-        return valid_urls
-    except Exception as e:
-        return []
-
-# Async Scraping using ScraperAPI
+# Async Scraping with retry
 async def fetch(session, url, scraperapi_key):
-    try:
-        scraperapi_url = f"http://api.scraperapi.com/?api_key={scraperapi_key}&url={url}"
-        async with session.get(scraperapi_url, timeout=20) as response:
-            html = await response.text()
-            soup = BeautifulSoup(html, "html.parser")
+    retries = 3
+    for attempt in range(retries):
+        try:
+            scraperapi_url = f"http://api.scraperapi.com/?api_key={scraperapi_key}&url={url}"
+            async with session.get(scraperapi_url, timeout=20) as response:
+                html = await response.text()
+                soup = BeautifulSoup(html, "html.parser")
 
-            title = soup.title.string.strip() if soup.title else "No Title Found"
+                title = soup.title.string.strip() if soup.title else "No Title Found"
 
-            meta_description = ""
-            meta = soup.find("meta", attrs={"name": "description"})
-            if meta and meta.get("content"):
-                meta_description = meta["content"].strip()
+                meta_description = ""
+                meta = soup.find("meta", attrs={"name": "description"})
+                if meta and meta.get("content"):
+                    meta_description = meta["content"].strip()
 
-            headings = []
-            for level in range(1, 11):
-                for tag in soup.find_all(f"h{level}"):
-                    headings.append((level, tag.get_text(strip=True)))
+                headings = []
+                for level in range(1, 11):
+                    for tag in soup.find_all(f"h{level}"):
+                        headings.append((level, tag.get_text(strip=True)))
 
-            return {
-                "url": url,
-                "title": title,
-                "meta_description": meta_description,
-                "headings": headings,
-                "content": " ".join([p.get_text(strip=True) for p in soup.find_all("p")])[:5000]
-            }
-    except Exception as e:
-        return {
-            "url": url,
-            "title": "Error",
-            "meta_description": "Error",
-            "headings": [],
-            "content": f"Error fetching: {e}"
-        }
+                return {
+                    "url": url,
+                    "title": title,
+                    "meta_description": meta_description,
+                    "headings": headings,
+                    "content": " ".join([p.get_text(strip=True) for p in soup.find_all("p")])[:5000]
+                }
+        except Exception:
+            if attempt == retries - 1:
+                return {
+                    "url": url,
+                    "title": "Error",
+                    "meta_description": "Error",
+                    "headings": [],
+                    "content": f"Error fetching after {retries} retries."
+                }
+            await asyncio.sleep(1)
 
 async def scrape_and_display(urls, scraperapi_key):
     scraped_summary = ""
@@ -132,9 +135,21 @@ async def scrape_and_display(urls, scraperapi_key):
                 st.markdown(f"*Meta Description:* {page['meta_description']}")
 
                 st.markdown("**Heading Structure:**")
+                last_h2 = None
                 for level, heading_text in page['headings']:
-                    indent = "&nbsp;" * (level * 4)
-                    st.markdown(f"{indent}&lt;H{level}&gt; {heading_text}", unsafe_allow_html=True)
+                    if level == 1:
+                        st.markdown(f"<H1> {heading_text}", unsafe_allow_html=True)
+                    elif level == 2:
+                        last_h2 = heading_text
+                        st.markdown(f"&nbsp;&nbsp;<H2> {heading_text}", unsafe_allow_html=True)
+                    elif level == 3:
+                        if last_h2:
+                            st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;<H3> {heading_text}", unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"<H3> {heading_text}", unsafe_allow_html=True)
+                    else:
+                        indent = "&nbsp;" * (level * 4)
+                        st.markdown(f"{indent}<H{level}> {heading_text}", unsafe_allow_html=True)
 
                 if page['content'].startswith("Error fetching"):
                     summary = page['content']
@@ -155,8 +170,6 @@ def summarize_page(headings, content):
         prompt = f"""
 Given these extracted headings and page content, summarize what this webpage is about in 5-7 lines.
 
-Focus on providing a simple, clear overview for an SEO content writer.
-
 Headings:
 {headings_text}
 
@@ -173,10 +186,10 @@ Content:
             max_tokens=400
         )
         return response.choices[0].message.content
-    except Exception as e:
-        return f"Error summarizing: {e}"
+    except Exception:
+        return "Error summarizing."
 
-# Generate final SEO Brief
+# Generate SEO Brief
 def generate_brief(company_name, company_website, keyword, sitemap_links, scraped_summaries):
     try:
         sitemap_urls = "\n".join(sitemap_links)
@@ -189,23 +202,17 @@ Summaries of competing pages:
 {scraped_summaries}
 
 Instructions:
-- Identify dominant search intent.
-- Suggest a detailed SEO content structure: H1 > H2 > H3 hierarchy.
-- Under each major H2, write 3–4 lines of context describing what should be written.
-- Suggest a strong blog Introduction strategy.
-- Suggest a strong blog Conclusion strategy.
-- Provide 1 Primary Keyword and 3–5 Secondary Keywords.
-- Provide 8–10 NLP/LSI Keywords related to the topic.
-- Suggest 4–6 Keyword Cluster Ideas (related blog topics).
-- Suggest 15 FAQs that can be included.
-- Recommend 3 internal links (only from these sitemap URLs):
+- Suggest a full SEO content structure (H1 > H2 > H3).
+- Write 3–4 lines of context under each H2.
+- Suggest blog Introduction and blog Ending strategies.
+- List 1 Primary Keyword and 3–5 Secondary Keywords.
+- Suggest 8–10 NLP/LSI keywords.
+- Recommend 4–6 related blog topic ideas (keyword clusters).
+- List 15 FAQs to include.
+- Recommend 3 internal links from:
 {sitemap_urls}
-- Recommend 3 external authoritative sources (industry reports, data research, no blog competitors).
-- Provide a TL;DR.
-
-Important:
-- Keep the format structured and SEO-writer ready.
-- Do not write a blog, just the detailed content brief.
+- Recommend 3 external authoritative sources (no blogs or competitors).
+- Provide a TL;DR at the end.
 
 Language: English only.
 """
@@ -219,15 +226,15 @@ Language: English only.
             max_tokens=4000
         )
         return response.choices[0].message.content
-    except Exception as e:
-        return f"Error generating brief: {e}"
+    except Exception:
+        return "Error generating SEO brief."
 
-# Main Execution
+# Main execution
 if submit:
     if not user_openai_key or not scraperapi_key:
         st.error("Please enter your OpenAI API Key and ScraperAPI Key.")
-    elif not company_name or not company_website or not target_keyword or not sitemap_url:
-        st.error("Please fill Company Name, Company Website, Target Keyword, and Sitemap URL.")
+    elif not company_name or not company_website or not target_keyword or not sitemap_urls_input:
+        st.error("Please fill all fields.")
     else:
         openai.api_key = user_openai_key
 
@@ -235,30 +242,26 @@ if submit:
         urls = get_top_bing_urls(target_keyword)
 
         if not urls:
-            st.error("Could not fetch URLs from Bing. Try a different keyword.")
+            st.error("Could not fetch URLs from Bing. Try again.")
         else:
             st.success(f"Fetched {len(urls)} URLs.")
-
             st.markdown("### List of Fetched URLs:")
             for idx, url in enumerate(urls, start=1):
                 st.markdown(f"{idx}. [{url}]({url})")
 
-            st.info("Scraping and summarizing each URL...")
-
+            st.info("Scraping URLs...")
             scraped_summary_for_brief = asyncio.run(scrape_and_display(urls, scraperapi_key))
 
-            st.info("Fetching live valid internal links from sitemap...")
-
-            sitemap_links = fetch_valid_sitemap_urls(sitemap_url)
+            st.info("Fetching sitemap URLs...")
+            sitemap_links = fetch_valid_sitemap_urls(sitemap_urls_input)
 
             if not sitemap_links:
-                st.warning("No valid internal URLs found in sitemap or sitemap not reachable.")
+                st.warning("No valid URLs found in sitemap.")
 
-            st.info("Generating final SEO content brief...")
-
+            st.info("Generating SEO Content Brief...")
             seo_brief = generate_brief(company_name, company_website, target_keyword, sitemap_links, scraped_summary_for_brief)
 
             st.subheader("Generated SEO Content Brief")
             st.write(seo_brief)
 
-            st.download_button("Download Brief as Text", data=seo_brief, file_name="seo_brief.txt")
+            st.download_button("Download SEO Brief", data=seo_brief, file_name="seo_content_brief.txt")
