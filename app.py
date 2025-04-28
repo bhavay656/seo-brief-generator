@@ -116,16 +116,19 @@ Suggest real quotes, analogies, or use-cases to enrich.
 - Formatting: Subheads, short paras, bullets
 - Reminder: Stay aligned with real search intent and SERP structure.
     """
+   client = openai.OpenAI(api_key=openai_api_key)
+response = client.chat.completions.create(
+    model="gpt-4",
+    messages=[
+        {"role": "system", "content": "You are a senior SEO strategist at GoComet.com."},
+        {"role": "user", "content": final_prompt},
+    ],
+    temperature=0.7,
+    max_tokens=2500
+)
+seo_brief = response.choices[0].message.content
 
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": "You are a senior SEO content strategist."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.7,
-        max_tokens=2500
-    )
+
 
     return response.choices[0].message.content
 
