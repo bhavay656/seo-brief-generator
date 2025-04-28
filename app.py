@@ -48,8 +48,20 @@ def get_top_bing_urls(keyword):
         urls = []
         seen_domains = set()
 
-        for a in soup.select('li.b_algo h2 a'):
-            href = a.get('href')
+        forbidden_domains = [
+            "bing.com", "youtube.com", "wikipedia.org", "linkedin.com", "facebook.com", "instagram.com",
+            "twitter.com", "webcache.googleusercontent.com"
+        ]
+
+        for li in soup.select('li.b_algo'):
+            h2 = li.find('h2')
+            if not h2:
+                continue
+            a_tag = h2.find('a')
+            if not a_tag:
+                continue
+
+            href = a_tag.get('href')
             if href:
                 clean_url = clean_bing_url(href)
                 parsed = urlparse(clean_url)
@@ -59,7 +71,11 @@ def get_top_bing_urls(keyword):
 
                 domain = parsed.netloc.lower()
 
-                # Avoid homepage links
+                # Skip forbidden sites
+                if any(bad in domain for bad in forbidden_domains):
+                    continue
+
+                # Skip homepage only links
                 if parsed.path == "/":
                     continue
 
