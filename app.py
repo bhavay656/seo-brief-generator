@@ -40,49 +40,64 @@ def clean_bing_url(bing_url):
 def get_top_bing_urls(keyword):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
-        params = {"q": keyword, "count": "30", "setLang": "EN", "cc": "US"}
-        response = requests.get("https://www.bing.com/search", params=params, headers=headers, timeout=10)
-        strain = SoupStrainer('li')
-        soup = BeautifulSoup(response.text, "html.parser", parse_only=strain)
+        forbidden_domains = [
+            "bing.com", "youtube.com", "wikipedia.org", "linkedin.com", "facebook.com",
+            "instagram.com", "twitter.com", "webcache.googleusercontent.com"
+        ]
+        forbidden_paths = [
+            "/podcast/", "/video/", "/videos/", "/search/", "/directory/", "/categories/", "/tag/", "/topic/"
+        ]
 
         urls = []
         seen_domains = set()
 
-        forbidden_domains = [
-            "bing.com", "youtube.com", "wikipedia.org", "linkedin.com", "facebook.com", "instagram.com",
-            "twitter.com", "webcache.googleusercontent.com"
-        ]
+        for offset in range(0, 50, 10):  # page 1 to 5
+            params = {
+                "q": keyword,
+                "first": offset,
+                "count": "10",
+                "setLang": "EN",
+                "cc": "US"
+            }
+            response = requests.get("https://www.bing.com/search", params=params, headers=headers, timeout=10)
+            strain = SoupStrainer('li')
+            soup = BeautifulSoup(response.text, "html.parser", parse_only=strain)
 
-        for li in soup.select('li.b_algo'):
-            h2 = li.find('h2')
-            if not h2:
-                continue
-            a_tag = h2.find('a')
-            if not a_tag:
-                continue
-
-            href = a_tag.get('href')
-            if href:
-                clean_url = clean_bing_url(href)
-                parsed = urlparse(clean_url)
-
-                if parsed.scheme not in ["http", "https"]:
+            for li in soup.select('li.b_algo'):
+                h2 = li.find('h2')
+                if not h2:
+                    continue
+                a_tag = h2.find('a')
+                if not a_tag:
                     continue
 
-                domain = parsed.netloc.lower()
+                href = a_tag.get('href')
+                if href:
+                    clean_url = clean_bing_url(href)
+                    parsed = urlparse(clean_url)
 
-                # Skip forbidden sites
-                if any(bad in domain for bad in forbidden_domains):
-                    continue
+                    if parsed.scheme not in ["http", "https"]:
+                        continue
 
-                # Skip homepage only links
-                if parsed.path == "/":
-                    continue
+                    domain = parsed.netloc.lower()
 
-                # Only one link per domain
-                if domain not in seen_domains:
-                    seen_domains.add(domain)
-                    urls.append(clean_url)
+                    # Forbidden domain or path
+                    if any(bad in domain for bad in forbidden_domains):
+                        continue
+                    if any(forbidden in parsed.path for forbidden in forbidden_paths):
+                        continue
+
+                    # Skip homepage
+                    if parsed.path == "/":
+                        continue
+
+                    # Only one URL per domain
+                    if domain not in seen_domains:
+                        seen_domains.add(domain)
+                        urls.append(clean_url)
+
+                if len(urls) == 10:
+                    break
 
             if len(urls) == 10:
                 break
@@ -90,8 +105,6 @@ def get_top_bing_urls(keyword):
         return urls
     except Exception:
         return []
-
-
 
 # Fetch multiple sitemap URLs
 def fetch_valid_sitemap_urls(sitemap_urls):
