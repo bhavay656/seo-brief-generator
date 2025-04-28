@@ -10,12 +10,11 @@ st.title("🚀 SEO Content Brief Generator")
 
 # Input fields
 openai_api_key = st.text_input("Enter your OpenAI API Key:", type="password")
-scraperapi_key = st.text_input("Enter your ScraperAPI Key:", type="password")
 company_name = st.text_input("Enter your Company Name:")
 company_website = st.text_input("Enter your Company Website URL:")
 keyword = st.text_input("Enter your Keyword (Example: Supply Chain Visibility Software):")
 
-# Function to scrape SERP using ScraperAPI
+# Function to scrape SERP
 def scrape_bing(keyword):
     try:
         st.info("🔍 Scraping Bing SERP for keyword...")
@@ -132,7 +131,7 @@ Suggest real quotes, analogies, or use-cases to enrich.
 
 # Button to scrape and generate
 if st.button("Scrape SERP Results and Generate Brief"):
-    if not openai_api_key or not scraperapi_key or not company_name or not company_website or not keyword:
+    if not openai_api_key or not company_name or not company_website or not keyword:
         st.warning("Please fill all the fields first.")
     else:
         with st.spinner('🔍 Scraping Bing SERPs... (this can take 10-20 seconds)'):
@@ -147,4 +146,4 @@ if st.button("Scrape SERP Results and Generate Brief"):
             st.markdown("## 📋 SEO Content Brief")
             st.markdown(brief)
         else:
-            st.error("❌ Failed to scrape results. Please check your ScraperAPI key or try a different keyword.")
+            st.error("❌ Failed to scrape results.")
