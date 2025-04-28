@@ -69,12 +69,11 @@ def fetch_valid_sitemap_urls(sitemap_url):
             for url in root.iter("{http://www.sitemaps.org/schemas/sitemap/0.9}loc"):
                 urls.append(url.text.strip())
 
-        # Check status codes
         valid_urls = []
         for url in urls:
             try:
-                head = requests.head(url, timeout=10)
-                if head.status_code == 200:
+                check = requests.get(url, timeout=10)
+                if check.status_code == 200:
                     valid_urls.append(url)
             except:
                 continue
@@ -135,7 +134,7 @@ async def scrape_and_display(urls, scraperapi_key):
                 st.markdown("**Heading Structure:**")
                 for level, heading_text in page['headings']:
                     indent = "&nbsp;" * (level * 4)
-                    st.markdown(f"{indent}**H{level}:** {heading_text}", unsafe_allow_html=True)
+                    st.markdown(f"{indent}&lt;H{level}&gt; {heading_text}", unsafe_allow_html=True)
 
                 if page['content'].startswith("Error fetching"):
                     summary = page['content']
@@ -192,14 +191,21 @@ Summaries of competing pages:
 Instructions:
 - Identify dominant search intent.
 - Suggest a detailed SEO content structure: H1 > H2 > H3 hierarchy.
-- Under each major H2, write 3–4 lines of context for content writers.
-- Suggest 15 FAQs related to the topic.
-- Recommend 3 internal links from the following sitemap URLs only:
+- Under each major H2, write 3–4 lines of context describing what should be written.
+- Suggest a strong blog Introduction strategy.
+- Suggest a strong blog Conclusion strategy.
+- Provide 1 Primary Keyword and 3–5 Secondary Keywords.
+- Provide 8–10 NLP/LSI Keywords related to the topic.
+- Suggest 4–6 Keyword Cluster Ideas (related blog topics).
+- Suggest 15 FAQs that can be included.
+- Recommend 3 internal links (only from these sitemap URLs):
 {sitemap_urls}
-- Recommend 3 external authoritative sources (industry reports, research, government/NGO studies, no blogs or competitors).
+- Recommend 3 external authoritative sources (industry reports, data research, no blog competitors).
 - Provide a TL;DR.
 
-The output must be structured, human-readable, SEO-focused.
+Important:
+- Keep the format structured and SEO-writer ready.
+- Do not write a blog, just the detailed content brief.
 
 Language: English only.
 """
