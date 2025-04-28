@@ -16,35 +16,42 @@ company_website = st.text_input("Enter your Company Website URL:")
 keyword = st.text_input("Enter your Keyword (Example: Supply Chain Visibility Software):")
 
 # Function to scrape SERP using ScraperAPI
-def scrape_google_scraperapi(keyword, scraperapi_key):
+def scrape_bing(keyword):
     try:
-        search_url = f"https://www.google.com/search?q={keyword.replace(' ', '+')}&hl=en&gl=us"
-        scraperapi_url = f"https://api.scraperapi.com/?api_key={scraperapi_key}&render=true&url={search_url}"
-        response = requests.get(scraperapi_url, timeout=120)
+        st.info("🔍 Scraping Bing SERP for keyword...")
+
+        query = keyword.replace(' ', '+')
+        bing_url = f"https://www.bing.com/search?q={query}&setlang=EN"
+
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36"
+        }
+        response = requests.get(bing_url, headers=headers, timeout=30)
         soup = BeautifulSoup(response.text, 'html.parser')
 
-        organic_results = []
-        for g in soup.select('div.g'):
-            link_tag = g.find('a', href=True)
-            title_tag = g.find('h3')
-            snippet_tag = g.find('span', class_='aCOpRe')
+        results = []
+        for item in soup.select('li.b_algo'):
+            link_tag = item.find('a')
+            snippet_tag = item.find('p')
 
-            if link_tag and title_tag:
-                organic_results.append({
-                    "title": title_tag.get_text(strip=True),
-                    "link": link_tag['href'],
-                    "snippet": snippet_tag.get_text(strip=True) if snippet_tag else "No snippet available"
+            if link_tag and link_tag['href']:
+                title = link_tag.get_text(strip=True)
+                link = link_tag['href']
+                snippet = snippet_tag.get_text(strip=True) if snippet_tag else "No snippet available"
+                results.append({
+                    "title": title,
+                    "link": link,
+                    "snippet": snippet
                 })
 
-            if len(organic_results) >= 5:  # scraping first 5 URLs
+            if len(results) >= 10:
                 break
 
-        return organic_results
+        return results
 
     except Exception as e:
-        st.error(f"Error during scraping: {e}")
+        st.error(f"Error scraping Bing: {e}")
         return []
-
 # Function to generate SEO Brief using OpenAI
 def generate_seo_brief(openai_api_key, company_name, company_website, keyword, scraped_results):
     openai.api_key = openai_api_key
@@ -128,8 +135,8 @@ if st.button("Scrape SERP Results and Generate Brief"):
     if not openai_api_key or not scraperapi_key or not company_name or not company_website or not keyword:
         st.warning("Please fill all the fields first.")
     else:
-        with st.spinner('🔍 Scraping Google SERPs... (this can take 10-20 seconds)'):
-            scraped_results = scrape_google_scraperapi(keyword, scraperapi_key)
+        with st.spinner('🔍 Scraping Bing SERPs... (this can take 10-20 seconds)'):
+            scraped_results = scrape_bing(keyword)
         
         if scraped_results:
             st.success("✅ Scraping Successful. Now generating SEO Content Brief...")
