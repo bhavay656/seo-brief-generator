@@ -87,7 +87,7 @@ if st.button("Scrape SERP Results and Generate Brief"):
             summaries = []
             headings_all = []
 
-            st.subheader("\ud83d\udcd1 Scraping and Summarizing Articles...")
+            st.subheader("Scraping and Summarizing Articles...")
 
             for idx, url in enumerate(urls):
                 with st.spinner(f"Scraping and summarizing URL {idx+1}/{len(urls)}: {url}"):
