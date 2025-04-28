@@ -4,7 +4,7 @@ from bs4 import BeautifulSoup
 import openai
 
 # Set Streamlit page config
-st.set_page_config(page_title="SEO Content Brief Generator", page_icon="🚀")
+st.set_page_config(page_title="SEO Content Brief Generator")
 
 # Streamlit Title
 st.title("\ud83d\ude80 SEO Content Brief Generator")
