@@ -19,6 +19,11 @@ target_keyword = st.text_input("Enter the Target Keyword (Required)", "")
 
 submit = st.button("Generate SEO Brief")
 
+# Setup OpenAI client (new style)
+client = None
+if user_openai_key:
+    client = openai.OpenAI(api_key=user_openai_key)
+
 # Helper: Clean real target URL from Bing redirect
 def clean_bing_url(bing_url):
     if bing_url.startswith("https://www.bing.com/ck/a?"):
@@ -29,7 +34,7 @@ def clean_bing_url(bing_url):
             return unquote(actual_url)
     return bing_url
 
-# Fetch top 10 Bing URLs for the keyword
+# Fetch top 10 Bing URLs
 def get_top_bing_urls(keyword):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
@@ -60,61 +65,90 @@ async def fetch(session, url, scraperapi_key):
             html = await response.text()
             soup = BeautifulSoup(html, "html.parser")
 
-            headings = []
-            for tag in ["h1", "h2", "h3", "h4"]:
-                for h in soup.find_all(tag):
-                    headings.append(h.get_text(strip=True))
+            title = soup.title.string.strip() if soup.title else "No Title Found"
 
-            paragraphs = [p.get_text(strip=True) for p in soup.find_all("p")]
-            text_content = " ".join(paragraphs)
+            meta_description = ""
+            meta = soup.find("meta", attrs={"name": "description"})
+            if meta and meta.get("content"):
+                meta_description = meta["content"].strip()
+
+            headings = []
+            for level in range(1, 11):
+                for tag in soup.find_all(f"h{level}"):
+                    headings.append((level, tag.get_text(strip=True)))
 
             return {
                 "url": url,
+                "title": title,
+                "meta_description": meta_description,
                 "headings": headings,
-                "content": text_content[:5000]
+                "content": " ".join([p.get_text(strip=True) for p in soup.find_all("p")])[:5000]
             }
     except Exception as e:
         return {
             "url": url,
+            "title": "Error",
+            "meta_description": "Error",
             "headings": [],
             "content": f"Error fetching: {e}"
         }
 
-async def scrape_all(urls, scraperapi_key):
-    results = []
+async def scrape_and_display(urls, scraperapi_key):
+    scraped_summary = ""
     async with aiohttp.ClientSession() as session:
         for i in range(0, len(urls), 3):
             batch = urls[i:i+3]
             tasks = [fetch(session, url, scraperapi_key) for url in batch]
             batch_results = await asyncio.gather(*tasks)
-            results.extend(batch_results)
-    return results
+
+            for page in batch_results:
+                st.markdown(f"### Scraped URL: [{page['url']}]({page['url']})")
+
+                st.markdown(f"**Page Title:** {page['title']}")
+                st.markdown(f"*Meta Description:* {page['meta_description']}")
+
+                st.markdown("**Heading Structure:**")
+                for level, heading_text in page['headings']:
+                    indent = "&nbsp;" * (level * 4)
+                    st.markdown(f"{indent}• {heading_text}", unsafe_allow_html=True)
+
+                if page['content'].startswith("Error fetching"):
+                    summary = page['content']
+                else:
+                    summary = summarize_page(page['headings'], page['content'])
+
+                st.markdown("**Page Summary:**")
+                st.write(summary)
+
+                scraped_summary += f"\n\nURL: {page['url']}\nSummary: {summary}"
+
+    return scraped_summary
 
 # Summarize each page
 def summarize_page(headings, content):
     try:
+        headings_text = "\n".join([f"H{level}: {text}" for level, text in headings])
         prompt = f"""
 Given these extracted headings and page content, summarize what this webpage is about in 5-7 lines.
 
 Focus on providing a simple, clear overview for an SEO content writer.
 
 Headings:
-{headings}
+{headings_text}
 
 Content:
 {content}
 """
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4",
-            api_key=user_openai_key,
             messages=[
-                {"role": "system", "content": "You are an expert content summarizer."},
+                {"role": "system", "content": "You are an expert SEO content summarizer."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3,
             max_tokens=400
         )
-        return response["choices"][0]["message"]["content"]
+        return response.choices[0].message.content
     except Exception as e:
         return f"Error summarizing: {e}"
 
@@ -130,18 +164,17 @@ Summaries of competing pages:
 {scraped_summaries}
 
 Instructions:
-- Identify the dominant search intent.
-- Create a suggested article structure with H1, H2, H3 headings.
-- Suggest 15 FAQs related to the topic.
-- Recommend 3 internal linking opportunities from {company_website}.
-- Recommend 3 external authoritative sources.
-- Provide a TL;DR for the final article.
+- Identify dominant search intent.
+- Suggest H1, H2, H3 structure.
+- Suggest 15 FAQs.
+- Recommend 3 internal links from {company_website}.
+- Recommend 3 external authoritative links.
+- Provide a TL;DR.
 
-Language must be English only. Structure must be clear and writer-friendly.
+Language: English only. Clear and practical for content writers.
 """
-        response = openai.ChatCompletion.create(
+        response = client.chat.completions.create(
             model="gpt-4",
-            api_key=user_openai_key,
             messages=[
                 {"role": "system", "content": "You are an expert SEO strategist."},
                 {"role": "user", "content": prompt}
@@ -149,7 +182,7 @@ Language must be English only. Structure must be clear and writer-friendly.
             temperature=0.4,
             max_tokens=4000
         )
-        return response["choices"][0]["message"]["content"]
+        return response.choices[0].message.content
     except Exception as e:
         return f"Error generating brief: {e}"
 
@@ -160,35 +193,15 @@ if submit:
     elif not company_name or not company_website or not target_keyword:
         st.error("Please enter Company Name, Company Website, and Target Keyword.")
     else:
-        openai.api_key = user_openai_key
-
         st.info("Fetching top URLs from Bing...")
         urls = get_top_bing_urls(target_keyword)
 
         if not urls:
             st.error("Could not fetch URLs from Bing. Try a different keyword.")
         else:
-            st.success(f"Fetched {len(urls)} URLs. Now scraping...")
+            st.success(f"Fetched {len(urls)} URLs. Now scraping and summarizing...")
 
-            scraped_results = asyncio.run(scrape_all(urls, scraperapi_key))
-
-            scraped_summary_for_brief = ""
-
-            for page in scraped_results:
-                st.subheader(f"Data from: {page['url']}")
-                st.write("Heading Structure:")
-                for heading in page['headings']:
-                    st.write(f"- {heading}")
-
-                if page['content'].startswith("Error fetching"):
-                    summary = page['content']
-                else:
-                    summary = summarize_page(page['headings'], page['content'])
-
-                st.write("Page Summary:")
-                st.write(summary)
-
-                scraped_summary_for_brief += f"\n\nURL: {page['url']}\nSummary: {summary}"
+            scraped_summary_for_brief = asyncio.run(scrape_and_display(urls, scraperapi_key))
 
             st.info("Generating final SEO content brief...")
 
