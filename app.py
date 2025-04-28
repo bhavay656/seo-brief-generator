@@ -131,25 +131,27 @@ async def scrape_and_display(urls, scraperapi_key):
             for page in batch_results:
                 st.markdown(f"### Scraped URL: [{page['url']}]({page['url']})")
 
-                st.markdown(f"**Page Title:** {page['title']}")
-                st.markdown(f"*Meta Description:* {page['meta_description']}")
+                st.markdown("**Page Title:**")
+                st.write(page['title'])
+
+                st.markdown("**Meta Description:**")
+                st.write(page['meta_description'])
 
                 st.markdown("**Heading Structure:**")
                 last_h2 = None
                 for level, heading_text in page['headings']:
                     if level == 1:
-                        st.markdown(f"<H1> {heading_text}", unsafe_allow_html=True)
+                        st.write(f"H1: {heading_text}")
                     elif level == 2:
                         last_h2 = heading_text
-                        st.markdown(f"&nbsp;&nbsp;<H2> {heading_text}", unsafe_allow_html=True)
+                        st.write(f"H2: {heading_text}")
                     elif level == 3:
                         if last_h2:
-                            st.markdown(f"&nbsp;&nbsp;&nbsp;&nbsp;<H3> {heading_text}", unsafe_allow_html=True)
+                            st.write(f"    H3: {heading_text}")
                         else:
-                            st.markdown(f"<H3> {heading_text}", unsafe_allow_html=True)
+                            st.write(f"H3: {heading_text}")
                     else:
-                        indent = "&nbsp;" * (level * 4)
-                        st.markdown(f"{indent}<H{level}> {heading_text}", unsafe_allow_html=True)
+                        st.write(f"H{level}: {heading_text}")
 
                 if page['content'].startswith("Error fetching"):
                     summary = page['content']
