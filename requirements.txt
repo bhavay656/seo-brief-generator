@@ -1,4 +1,5 @@
 streamlit
+aiohttp
+openai
 beautifulsoup4
-httpx
-openai>=1.0.0
+requests
