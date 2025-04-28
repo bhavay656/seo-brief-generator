@@ -5,6 +5,7 @@ import asyncio
 import openai
 from bs4 import BeautifulSoup, SoupStrainer
 from urllib.parse import urlparse, parse_qs, unquote
+import xml.etree.ElementTree as ET
 
 # Streamlit Config
 st.set_page_config(page_title="SEO Content Brief Generator", layout="wide")
@@ -15,16 +16,17 @@ user_openai_key = st.text_input("Enter your OpenAI API Key (Required)", type="pa
 scraperapi_key = st.text_input("Enter your ScraperAPI Key (Required)", type="password")
 company_name = st.text_input("Enter your Company Name (Required)", "")
 company_website = st.text_input("Enter your Company Website URL (example: gocomet.com)", "")
+sitemap_url = st.text_input("Enter your Sitemap URL (example: https://gocomet.com/sitemap.xml)", "")
 target_keyword = st.text_input("Enter the Target Keyword (Required)", "")
 
 submit = st.button("Generate SEO Brief")
 
-# Setup OpenAI client (new style)
+# Setup OpenAI client
 client = None
 if user_openai_key:
     client = openai.OpenAI(api_key=user_openai_key)
 
-# Helper: Clean real target URL from Bing redirect
+# Clean Bing URL
 def clean_bing_url(bing_url):
     if bing_url.startswith("https://www.bing.com/ck/a?"):
         parsed = urlparse(bing_url)
@@ -54,6 +56,29 @@ def get_top_bing_urls(keyword):
                 break
 
         return urls
+    except Exception as e:
+        return []
+
+# Scrape Sitemap and filter URLs
+def fetch_valid_sitemap_urls(sitemap_url):
+    try:
+        response = requests.get(sitemap_url, timeout=15)
+        urls = []
+        if response.status_code == 200:
+            root = ET.fromstring(response.content)
+            for url in root.iter("{http://www.sitemaps.org/schemas/sitemap/0.9}loc"):
+                urls.append(url.text.strip())
+
+        # Check status codes
+        valid_urls = []
+        for url in urls:
+            try:
+                head = requests.head(url, timeout=10)
+                if head.status_code == 200:
+                    valid_urls.append(url)
+            except:
+                continue
+        return valid_urls
     except Exception as e:
         return []
 
@@ -110,7 +135,7 @@ async def scrape_and_display(urls, scraperapi_key):
                 st.markdown("**Heading Structure:**")
                 for level, heading_text in page['headings']:
                     indent = "&nbsp;" * (level * 4)
-                    st.markdown(f"{indent}• {heading_text}", unsafe_allow_html=True)
+                    st.markdown(f"{indent}**H{level}:** {heading_text}", unsafe_allow_html=True)
 
                 if page['content'].startswith("Error fetching"):
                     summary = page['content']
@@ -153,8 +178,9 @@ Content:
         return f"Error summarizing: {e}"
 
 # Generate final SEO Brief
-def generate_brief(company_name, company_website, keyword, scraped_summaries):
+def generate_brief(company_name, company_website, keyword, sitemap_links, scraped_summaries):
     try:
+        sitemap_urls = "\n".join(sitemap_links)
         prompt = f"""
 You are an SEO strategist working for {company_name} ({company_website}).
 
@@ -165,13 +191,17 @@ Summaries of competing pages:
 
 Instructions:
 - Identify dominant search intent.
-- Suggest H1, H2, H3 structure.
-- Suggest 15 FAQs.
-- Recommend 3 internal links from {company_website}.
-- Recommend 3 external authoritative links.
+- Suggest a detailed SEO content structure: H1 > H2 > H3 hierarchy.
+- Under each major H2, write 3–4 lines of context for content writers.
+- Suggest 15 FAQs related to the topic.
+- Recommend 3 internal links from the following sitemap URLs only:
+{sitemap_urls}
+- Recommend 3 external authoritative sources (industry reports, research, government/NGO studies, no blogs or competitors).
 - Provide a TL;DR.
 
-Language: English only. Clear and practical for content writers.
+The output must be structured, human-readable, SEO-focused.
+
+Language: English only.
 """
         response = client.chat.completions.create(
             model="gpt-4",
@@ -190,22 +220,37 @@ Language: English only. Clear and practical for content writers.
 if submit:
     if not user_openai_key or not scraperapi_key:
         st.error("Please enter your OpenAI API Key and ScraperAPI Key.")
-    elif not company_name or not company_website or not target_keyword:
-        st.error("Please enter Company Name, Company Website, and Target Keyword.")
+    elif not company_name or not company_website or not target_keyword or not sitemap_url:
+        st.error("Please fill Company Name, Company Website, Target Keyword, and Sitemap URL.")
     else:
+        openai.api_key = user_openai_key
+
         st.info("Fetching top URLs from Bing...")
         urls = get_top_bing_urls(target_keyword)
 
         if not urls:
             st.error("Could not fetch URLs from Bing. Try a different keyword.")
         else:
-            st.success(f"Fetched {len(urls)} URLs. Now scraping and summarizing...")
+            st.success(f"Fetched {len(urls)} URLs.")
+
+            st.markdown("### List of Fetched URLs:")
+            for idx, url in enumerate(urls, start=1):
+                st.markdown(f"{idx}. [{url}]({url})")
+
+            st.info("Scraping and summarizing each URL...")
 
             scraped_summary_for_brief = asyncio.run(scrape_and_display(urls, scraperapi_key))
 
+            st.info("Fetching live valid internal links from sitemap...")
+
+            sitemap_links = fetch_valid_sitemap_urls(sitemap_url)
+
+            if not sitemap_links:
+                st.warning("No valid internal URLs found in sitemap or sitemap not reachable.")
+
             st.info("Generating final SEO content brief...")
 
-            seo_brief = generate_brief(company_name, company_website, target_keyword, scraped_summary_for_brief)
+            seo_brief = generate_brief(company_name, company_website, target_keyword, sitemap_links, scraped_summary_for_brief)
 
             st.subheader("Generated SEO Content Brief")
             st.write(seo_brief)
