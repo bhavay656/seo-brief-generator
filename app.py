@@ -1,99 +1,162 @@
 import streamlit as st
-import openai
-import httpx
-from bs4 import BeautifulSoup
+import requests
+import aiohttp
 import asyncio
+import openai
+from bs4 import BeautifulSoup
 
+# OpenAI key
+openai.api_key = st.secrets["OPENAI_API_KEY"]
+
+# Streamlit Page Config
 st.set_page_config(page_title="SEO Content Brief Generator", layout="wide")
+st.title("SEO Content Brief Generator")
 
-def scrape_bing_search_results(keyword):
-    search_url = f"https://www.bing.com/search?q={keyword.replace(' ', '+')}&cc=us&setlang=en"
+# Input
+keyword = st.text_input("Enter the Target Keyword (Required)", "")
+urls_input = st.text_area("Enter URLs (maximum 10, one per line)", "")
+your_domain = st.text_input("Your Website Domain for Internal Links (example: gocomet.com)", "")
+
+submit = st.button("Generate SEO Brief")
+
+# Async Scraping
+async def fetch(session, url):
     try:
-        response = httpx.get(search_url, timeout=20)
-        soup = BeautifulSoup(response.text, 'html.parser')
+        headers = {"User-Agent": "Mozilla/5.0"}
+        async with session.get(url, timeout=15) as response:
+            html = await response.text()
+            soup = BeautifulSoup(html, "html.parser")
 
-        urls = []
-        for a_tag in soup.select('li.b_algo h2 a'):
-            href = a_tag.get('href')
-            if href and href.startswith('http'):
-                urls.append(href)
-            if len(urls) == 10:
-                break
+            headings = []
+            for tag in ["h1", "h2", "h3", "h4"]:
+                for h in soup.find_all(tag):
+                    headings.append(h.get_text(strip=True))
 
-        return urls
-    except Exception as e:
-        st.error(f"Failed to scrape Bing: {e}")
-        return []
+            paragraphs = [p.get_text(strip=True) for p in soup.find_all("p")]
+            text_content = " ".join(paragraphs)
 
-async def fetch_page(client, url):
-    try:
-        response = await client.get(url, timeout=20)
-        soup = BeautifulSoup(response.text, 'html.parser')
-
-        headings = []
-        for tag in soup.find_all(['h1', 'h2', 'h3']):
-            text = tag.get_text(strip=True)
-            if text:
-                headings.append(text)
-
-        text_content = ' '.join([p.get_text(strip=True) for p in soup.find_all('p')])
-
-        return {
-            "url": url,
-            "text": text_content,
-            "headings": headings
-        }
+            return {
+                "url": url,
+                "headings": headings,
+                "content": text_content[:5000]
+            }
     except Exception as e:
         return {
             "url": url,
-            "text": "",
             "headings": [],
-            "error": str(e)
+            "content": f"Error fetching: {e}"
         }
 
-async def scrape_multiple_pages(urls):
-    async with httpx.AsyncClient() as client:
-        tasks = [fetch_page(client, url) for url in urls]
-        return await asyncio.gather(*tasks)
+async def scrape_all(urls):
+    results = []
+    async with aiohttp.ClientSession() as session:
+        for i in range(0, len(urls), 3):
+            batch = urls[i:i+3]
+            tasks = [fetch(session, url) for url in batch]
+            batch_results = await asyncio.gather(*tasks)
+            results.extend(batch_results)
+    return results
 
-def generate_brief_with_openai(openai_api_key, company_name, company_website, keyword, page_summaries):
-    openai_client = openai.OpenAI(api_key=openai_api_key)
+# Summarize a page
+def summarize_page(headings, content):
+    try:
+        prompt = f"""
+You are helping an SEO content writer.
 
-    prompt = f"""
-You are an expert SEO strategist.
+Given these extracted headings and text content from a webpage, summarize what the page is about in 5-7 lines.
 
-Below are the summaries and heading structures of top ranking pages for the keyword "{keyword}":
+Be simple, clear, and use English only.
 
+Headings:
+{headings}
+
+Content:
+{content}
+"""
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are an expert content summarizer for SEO."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=400
+        )
+        return response["choices"][0]["message"]["content"]
+    except Exception as e:
+        return f"Error summarizing: {e}"
+
+# Generate the final SEO brief
+def generate_brief(keyword, scraped_summaries, domain):
+    try:
+        prompt = f"""
+You are an SEO strategist.
+
+Keyword: {keyword}
+
+Summaries of competing pages:
+{scraped_summaries}
+
+Instructions:
+- Summarize the dominant search intent.
+- Provide H1, H2, H3 structure.
+- Suggest 15 FAQs.
+- Suggest 3 internal links from {domain}.
+- Suggest 3 external authoritative links.
+- Give a TL;DR for the final blog.
+
+Language: English only. Clear and simple.
 """
 
-    for idx, page in enumerate(page_summaries, 1):
-        prompt += f"""
-Result {idx} URL: {page['url']}
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are an expert SEO strategist."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.4,
+            max_tokens=4000
+        )
+        return response["choices"][0]["message"]["content"]
+    except Exception as e:
+        return f"Error generating SEO brief: {e}"
 
-Summary:
-{page['text'][:1000]}  # Use only 1000 characters max per result.
+# Main Execution
+if submit:
+    if not keyword or not urls_input:
+        st.warning("Keyword and URLs are required fields.")
+    else:
+        urls = urls_input.strip().split("\n")
+        if len(urls) > 10:
+            st.error("Maximum 10 URLs allowed.")
+        else:
+            st.info("Scraping pages in batches of 3. Please wait.")
 
-Heading Structure:
-{', '.join(page['headings'])}
-"""
+            scraped_results = asyncio.run(scrape_all(urls))
 
-    prompt += f"""
+            scraped_summary_for_brief = ""
 
-Now, based on the above SERP analysis, and assuming you are writing for the website {company_website}, 
-generate an SEO-optimized blog outline and writing strategy for the keyword "{keyword}". 
-Keep strict focus on real user search intent. no assumptions, checked the scraped details.
+            for page in scraped_results:
+                st.subheader(f"Data from: {page['url']}")
+                st.write("Heading Structure:")
+                for heading in page['headings']:
+                    st.write(f"- {heading}")
 
-Additionally:
-- Suggest 5 internal linking opportunities from {company_website}.
-- Suggest 3 external high-authority links.
-- Give a short recommendation on tone, style, and structure.
-"""
+                if page['content'].startswith("Error fetching"):
+                    summary = page['content']
+                else:
+                    summary = summarize_page(page['headings'], page['content'])
+                
+                st.write("Page Summary:")
+                st.write(summary)
 
-    response = openai_client.chat.completions.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": "You are an SEO strategist helping content teams rank on Google."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.4,
-        max_tokens
+                scraped_summary_for_brief += f"\n\nURL: {page['url']}\nSummary: {summary}"
+
+            st.info("Generating SEO content brief.")
+
+            seo_brief = generate_brief(keyword, scraped_summary_for_brief, your_domain)
+
+            st.subheader("Generated SEO Content Brief")
+            st.write(seo_brief)
+
+            st.download_button("Download Brief as Text", data=seo_brief, file_name="seo_brief.txt")
