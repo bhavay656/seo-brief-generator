@@ -7,7 +7,7 @@ import openai
 st.set_page_config(page_title="SEO Content Brief Generator")
 
 # Streamlit Title
-st.title("\ud83d\ude80 SEO Content Brief Generator")
+st.title("SEO Content Brief Generator")
 
 # Input Fields
 st.subheader("Enter Details")
