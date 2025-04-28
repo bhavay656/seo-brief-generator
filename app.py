@@ -40,13 +40,13 @@ def clean_bing_url(bing_url):
 def get_top_bing_urls(keyword):
     try:
         headers = {"User-Agent": "Mozilla/5.0"}
-        params = {"q": keyword, "count": "20", "setLang": "EN", "cc": "US"}
+        params = {"q": keyword, "count": "30", "setLang": "EN", "cc": "US"}
         response = requests.get("https://www.bing.com/search", params=params, headers=headers, timeout=10)
         strain = SoupStrainer('li')
         soup = BeautifulSoup(response.text, "html.parser", parse_only=strain)
 
         urls = []
-        seen = set()
+        seen_domains = set()
 
         for a in soup.select('li.b_algo h2 a'):
             href = a.get('href')
@@ -57,15 +57,16 @@ def get_top_bing_urls(keyword):
                 if parsed.scheme not in ["http", "https"]:
                     continue
 
-                domain_plus_path = parsed.netloc + parsed.path
+                domain = parsed.netloc.lower()
 
-                # Avoid duplicate pages
-                if domain_plus_path not in seen:
-                    seen.add(domain_plus_path)
+                # Avoid homepage links
+                if parsed.path == "/":
+                    continue
 
-                    # Avoid pure homepage links (prefer articles)
-                    if parsed.path != "/" and clean_url.startswith("http"):
-                        urls.append(clean_url)
+                # Only one link per domain
+                if domain not in seen_domains:
+                    seen_domains.add(domain)
+                    urls.append(clean_url)
 
             if len(urls) == 10:
                 break
@@ -73,6 +74,7 @@ def get_top_bing_urls(keyword):
         return urls
     except Exception:
         return []
+
 
 
 # Fetch multiple sitemap URLs
