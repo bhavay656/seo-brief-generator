@@ -76,7 +76,7 @@ if st.button("Scrape SERP Results and Generate Brief"):
     if not openai_api_key or not scraperapi_key or not company_name or not company_website or not keyword:
         st.warning("\u26a0\ufe0f Please fill all the fields.")
     else:
-        with st.spinner("\ud83d\udd0d Scraping Bing SERP for URLs..."):
+        with st.spinner("Scraping Bing SERP for URLs..."):
             urls = scrape_bing(keyword)
 
         if urls:
@@ -96,7 +96,7 @@ if st.button("Scrape SERP Results and Generate Brief"):
                     summaries.append((url, summary))
                     headings_all.append((url, headings))
 
-            st.subheader("\ud83d\udd39 SEO Content Brief:")
+            st.subheader("SEO Content Brief:")
             for idx, (url, summary) in enumerate(summaries):
                 st.markdown(f"**{idx+1}. [{url}]({url})**")
                 st.markdown(f"**Summary:** {summary}")
