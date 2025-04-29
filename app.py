@@ -36,68 +36,54 @@ if not keyword and not topic:
 query = keyword or topic
 
 # ---- Bing Results (Scrape up to 3 pages, remove duplicates) ----
-def fetch_bing_urls(query, pages=3):
+def fetch_serp_urls(query):
     headers = {"User-Agent": "Mozilla/5.0"}
-    links = []
+    scraperapi_key = st.secrets["scraperapi_key"]
 
-    for page in range(pages):
-        offset = page * 10
-        url = f"https://www.bing.com/search?q={query}&first={offset}"
+    # Try Bing directly
+    try:
+        r = requests.get(f"https://www.bing.com/search?q={query}", headers=headers, timeout=15)
+        soup = BeautifulSoup(r.text, "html.parser")
+        links = [a["href"] for a in soup.select("li.b_algo h2 a") if a["href"].startswith("http")]
+        if links:
+            return list(dict.fromkeys(links))[:10]
+    except Exception as e:
+        print("Direct Bing failed:", e)
+
+    # Retry Bing via ScraperAPI
+    for attempt in range(3):
         try:
-            r = requests.get(url, headers=headers, timeout=10)
+            bing_url = f"https://www.bing.com/search?q={query}"
+            api_url = f"http://api.scraperapi.com?api_key={scraperapi_key}&url={bing_url}"
+            r = requests.get(api_url, headers=headers, timeout=15)
             soup = BeautifulSoup(r.text, "html.parser")
-
-            result_blocks = soup.find_all("li", class_="b_algo")
-            for block in result_blocks:
-                a_tag = block.find("a", href=True)
-                if a_tag and a_tag["href"].startswith("http"):
-                    links.append(a_tag["href"])
+            links = [a["href"] for a in soup.select("li.b_algo h2 a") if a["href"].startswith("http")]
+            if links:
+                return list(dict.fromkeys(links))[:10]
         except Exception as e:
-            print(f"Error on Bing page {page+1}: {e}")
+            print(f"ScraperAPI Bing attempt {attempt+1} failed:", e)
 
-    return list(dict.fromkeys(links))  # Deduplicated list
-
-
-def fetch_google_urls(query):
-    headers = {"User-Agent": "Mozilla/5.0"}
-    target_url = f"https://www.google.com/search?q={query}"
-    api_url = f"http://api.scraperapi.com?api_key={scraperapi_key}&url={target_url}"
-
-    response = requests.get(api_url, headers=headers, timeout=10)
-    soup = BeautifulSoup(response.text, "html.parser")
-
-    links = []
-    for a in soup.select("a"):
-        href = a.get("href")
-        if href and href.startswith("/url?q=http"):
-            link = href.split("/url?q=")[1].split("&")[0]
-            if link.startswith("http"):
-                links.append(link)
-
-    return links[:10]
-
-
-
-def fetch_urls_with_fallback(query, scraperapi_key):
-    urls = fetch_bing_urls(query)
-    if len(urls) >= 3:
-        return urls
-    else:
+    # Retry Google via ScraperAPI
+    for attempt in range(3):
         try:
             google_url = f"https://www.google.com/search?q={query}"
-            headers = {"User-Agent": "Mozilla/5.0"}
-            r = requests.get(google_url, headers=headers, timeout=10)
+            api_url = f"http://api.scraperapi.com?api_key={scraperapi_key}&url={google_url}"
+            r = requests.get(api_url, headers=headers, timeout=15)
             soup = BeautifulSoup(r.text, "html.parser")
             links = []
             for a in soup.select("a"):
                 href = a.get("href")
                 if href and href.startswith("/url?q=http"):
                     link = href.split("/url?q=")[1].split("&")[0]
-                    if link.startswith("http"):
+                    if "google.com" not in link:
                         links.append(link)
-            return links[:10]
+            if links:
+                return list(dict.fromkeys(links))[:10]
         except Exception as e:
-            return []
+            print(f"ScraperAPI Google attempt {attempt+1} failed:", e)
+
+    return []
+
 
 
 
@@ -223,7 +209,7 @@ Write a detailed article from this outline:
 # ---------- Streamlit Flow ------------
 st.subheader("🔍 SERP Insights (TLDR, Context, Unique Angle)")
 
-urls = fetch_urls_with_fallback(query, scraperapi_key)
+urls = fetch_serp_urls(query)
 st.markdown("### 🔗 Top SERP URLs")
 for u in urls:
     st.markdown(f"- [{u}]({u})")
