@@ -1,17 +1,19 @@
-
 import streamlit as st
 import requests
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup, SoupStrainer
 import xml.etree.ElementTree as ET
 import openai
-import re
 import time
 
 st.set_page_config(page_title="SEO Content Brief Generator")
 
 st.title("SEO Content Brief Generator")
-st.markdown("This app generates a highly detailed SEO content brief by scraping the top-ranking pages from Bing for your target keyword. It extracts heading hierarchy (H1-H4), identifies content structure, analyzes schemas present on each URL, and provides competitive differentiation insights. Internal links are suggested from your sitemap, and keyword clusters are generated to guide your writers effectively.")
+st.markdown(
+    "This app generates a detailed SEO content brief by scraping top-ranking pages from Bing for your target keyword. "
+    "It extracts heading hierarchy (H1-H4), identifies schemas present, analyzes competitor differentiation, suggests internal links from your sitemap, "
+    "and builds a complete writing guide with primary and secondary keywords."
+)
 
 openai_api_key = st.text_input("Enter your OpenAI API Key (Required)", type="password")
 scraperapi_key = st.text_input("Enter your ScraperAPI Key (Required)", type="password")
@@ -150,7 +152,8 @@ def generate_serp_diff_analysis(headings_list):
 
 def generate_content_brief(openai_api_key, keyword, competitor_data, domain, internal_links):
     openai.api_key = openai_api_key
-    prompt = f"""You are an expert SEO strategist. Create a detailed content brief for the keyword "{keyword}" based on the competitor data below. Include:
+    prompt = f"""
+You are an expert SEO strategist. Create a detailed content brief for the keyword "{keyword}" based on the competitor data below. Include:
 
 1. Primary and secondary keywords
 2. Suggested H1, H2, H3 structure (clean nested)
@@ -186,6 +189,7 @@ if st.button("Generate SEO Brief"):
             st.markdown(f"{i+1}. [{url}]({url})")
 
         full_competitor_data = []
+        all_headings = []
         for url in urls:
             st.markdown("---")
             st.subheader(f"Scraped URL: [{url}]({url})")
@@ -200,10 +204,11 @@ if st.button("Generate SEO Brief"):
             display_heading_structure(headings)
             st.write("Schemas Detected:", ", ".join(schemas) if schemas else "None")
 
-            flat_headings = "\n".join([f"H{lvl}: {txt}" for lvl, txt in headings])
-            full_competitor_data.append(f"URL: {url}\nTitle: {title}\nHeadings:\n{flat_headings}\nSchemas: {schemas}")
+            flat_headings = "\\n".join([f"H{lvl}: {txt}" for lvl, txt in headings])
+            full_competitor_data.append(f"URL: {url}\\nTitle: {title}\\nHeadings:\\n{flat_headings}\\nSchemas: {schemas}")
+            all_headings.append(headings)
 
-        diff_summary = generate_serp_diff_analysis([extract_headings(fetch_html_content(u)) for u in urls])
+        diff_summary = generate_serp_diff_analysis(all_headings)
         st.subheader("SERP Differentiation Summary")
         st.write(diff_summary)
 
@@ -213,5 +218,5 @@ if st.button("Generate SEO Brief"):
             st.write(link)
 
         st.subheader("Generated SEO Content Brief")
-        brief = generate_content_brief(openai_api_key, target_keyword, "\n\n".join(full_competitor_data), company_domain, internal_links)
+        brief = generate_content_brief(openai_api_key, target_keyword, "\\n\\n".join(full_competitor_data), company_domain, internal_links)
         st.code(brief)
