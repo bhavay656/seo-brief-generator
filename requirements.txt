@@ -3,4 +3,8 @@ openai>=1.2.4
 aiohttp
 beautifulsoup4
 requests
+cloudscraper
+selenium
+undetected-chromedriver
+pydot
 graphviz
