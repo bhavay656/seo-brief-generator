@@ -8,9 +8,11 @@ from urllib.parse import urlparse
 import time
 
 st.set_page_config(page_title="SEO Content Brief Generator", layout="wide")
-st.title("SEO Content Brief Generator")
-st.caption("Generate detailed SEO briefs based on real SERPs, heading flows, schemas, and keyword clustering.")
 
+st.title("SEO Content Brief Generator")
+st.caption("Generate detailed SEO briefs based on real SERPs, heading flows, schemas, keyword clusters, and full URL insights — no markdown.")
+
+# --- Inputs --- #
 openai_api_key = st.text_input("Enter your OpenAI API Key", type="password")
 scraperapi_key = st.text_input("Enter your ScraperAPI Key", type="password")
 company_name = st.text_input("Enter your Company Name")
@@ -18,6 +20,7 @@ company_url = st.text_input("Enter your Company Website URL (e.g., yourcompany.c
 sitemap_urls = st.text_input("Enter one or multiple Sitemap URLs (comma-separated)")
 keyword = st.text_input("Enter the Target Keyword")
 
+# --- Fetch top 10 Bing URLs --- #
 def fetch_bing_urls(keyword):
     headers = {"User-Agent": "Mozilla/5.0"}
     urls = []
@@ -40,6 +43,7 @@ def fetch_bing_urls(keyword):
             time.sleep(2)
     return urls[:10]
 
+# --- Scrape a single URL --- #
 async def scrape_url(session, url, scraperapi_key, fallback=False):
     try:
         final_url = f"http://api.scraperapi.com/?api_key={scraperapi_key}&url={url}&render=true" if fallback else url
@@ -52,7 +56,7 @@ async def scrape_url(session, url, scraperapi_key, fallback=False):
                 if tag.get("name") == "description" or tag.get("property") == "og:description":
                     meta = tag.get("content", "")
                     break
-            headings = [f"{tag.name.upper()}: {tag.get_text(strip=True)}" for tag in soup.find_all(["h1", "h2", "h3", "h4"])]
+            headings = [tag.get_text(strip=True) for tag in soup.find_all(["h1", "h2", "h3", "h4"])]
             schemas = []
             if 'FAQPage' in html:
                 schemas.append("FAQPage")
@@ -70,6 +74,7 @@ async def scrape_url(session, url, scraperapi_key, fallback=False):
             return await scrape_url(session, url, scraperapi_key, fallback=True)
         return {"url": url, "error": "Failed after retries"}
 
+# --- Scrape all URLs in batches --- #
 async def scrape_all(urls, scraperapi_key):
     results = []
     batch_size = 3
@@ -83,27 +88,32 @@ async def scrape_all(urls, scraperapi_key):
             time.sleep(2)
     return results
 
-def generate_brief(keyword, all_data, sitemap_urls, company_name, company_url):
-    prompt = f"""You are an SEO expert. Based on the following scraped data, generate a detailed SEO content brief for the keyword: {keyword}
-Company: {company_name} | Website: {company_url}
-Sitemap URLs: {sitemap_urls}
-
-Scraped Source Details:
-{all_data}
-
-Instructions:
-1. Understand the actual search intent from the headings and structure.
-2. Do not hallucinate. Observe, summarize, and guide.
-3. Suggest primary and secondary keywords.
-4. Identify and name semantic/NLP keyword clusters.
-5. Provide a detailed document structure with H1 > H2 > H3.
-6. Add internal and external link ideas.
-7. Mention schema types observed.
-8. Include unique SERP differentiation notes.
-9. Add writer-friendly briefs under each H2/H3 with insights.
-10. Keep it clean, non-markdown, with no emojis or placeholder text.
-"""
-
+# --- Generate SEO Brief --- #
+def generate_brief(keyword, headings_all, sitemap_urls, company_name, company_url):
+    prompt = (
+        f"You are a senior SEO Content Strategist.\n"
+        f"Keyword: {keyword}\n"
+        f"Company: {company_name} | Website: {company_url}\n"
+        f"Sitemap URLs: {sitemap_urls}\n"
+        f"\n"
+        f"Observed competitor content:\n{headings_all}\n\n"
+        f"Based on these, prepare a 1000x detailed SEO content brief for writers:\n"
+        f"- Title and Meta Suggestions\n"
+        f"- Primary + Secondary Keywords\n"
+        f"- NLP/Semantic Keywords\n"
+        f"- Keyword Clusters\n"
+        f"- Detailed Heading Structure (based on observed headings)\n"
+        f"- Writer Content Directions under each H2/H3\n"
+        f"- Internal Link Suggestions from company's sitemap domain\n"
+        f"- External Link Suggestions from trusted domains\n"
+        f"- Schema Types detected and to be used\n"
+        f"- SERP Differentiation Opportunities\n"
+        f"- Mindmap of topic\n"
+        f"\nImportant Instructions:\n"
+        f"- NO markdown formatting. Only clear readable text.\n"
+        f"- Reflect actual search intent based on observed URLs.\n"
+        f"- Highly detailed and practical writer notes. No placeholder suggestions.\n"
+    )
     client = openai.OpenAI(api_key=openai_api_key)
     response = client.chat.completions.create(
         model="gpt-4",
@@ -111,6 +121,7 @@ Instructions:
     )
     return response.choices[0].message.content
 
+# --- App Logic --- #
 if st.button("Generate SEO Brief"):
     if openai_api_key and scraperapi_key and company_url and keyword:
         with st.spinner("Fetching Top 10 Organic URLs from Bing..."):
@@ -120,37 +131,41 @@ if st.button("Generate SEO Brief"):
                 st.stop()
             st.success(f"Fetched {len(bing_urls)} URLs.")
             for idx, link in enumerate(bing_urls):
-                st.markdown(f"{idx+1}. [{link}]({link})")
+                st.markdown(f"{idx+1}. {link}")
 
         with st.spinner("Scraping URLs content..."):
             results = asyncio.run(scrape_all(bing_urls, scraperapi_key))
 
-        source_insights = ""
+        headings_all = ""
         failed = []
         for res in results:
             if 'error' not in res:
-source_insights += f"Heading: {heading_text}\n"
-URL: {res['url']}
-Title: {res['title']}
-Meta: {res['meta']}
-Schemas: {', '.join(res['schemas'])}
-Headings:
-"
+                headings_all += (
+                    f"Source URL: {res['url']}\n"
+                    f"Title: {res['title']}\n"
+                    f"Meta Description: {res['meta']}\n"
+                    f"Schemas Detected: {', '.join(res['schemas'])}\n"
+                    f"Headings Observed:\n"
+                )
                 for h in res['headings']:
-                    source_insights += f" - {h}
-"
+                    headings_all += f"- {h}\n"
+                headings_all += "\n"
             else:
                 failed.append(res['url'])
 
-        with st.spinner("Generating Brief using OpenAI..."):
-            full_brief = generate_brief(keyword, source_insights, sitemap_urls, company_name, company_url)
+        st.subheader("Scraped URL Insights")
+        st.text_area("Full Observations", headings_all, height=500)
+
+        with st.spinner("Generating Full SEO Content Brief using OpenAI..."):
+            full_brief = generate_brief(keyword, headings_all, sitemap_urls, company_name, company_url)
 
         st.subheader("Generated Full SEO Content Brief")
-        st.text(full_brief)
+        st.text_area("SEO Content Brief", full_brief, height=800)
 
         if failed:
-            st.error("Some URLs failed:")
+            st.error("Some URLs failed to scrape:")
             for url in failed:
                 st.markdown(f"- {url}")
     else:
         st.error("Please fill all required fields!")
+
