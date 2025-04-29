@@ -1,10 +1,7 @@
 streamlit
 openai>=1.2.4
+scraperapi-sdk
 aiohttp
 beautifulsoup4
 requests
-cloudscraper
-selenium
-undetected-chromedriver
-pydot
 graphviz
