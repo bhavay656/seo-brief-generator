@@ -1,7 +1,4 @@
 streamlit
-openai>=1.2.4
-scraperapi-sdk
-aiohttp
 beautifulsoup4
 requests
-graphviz
+openai
