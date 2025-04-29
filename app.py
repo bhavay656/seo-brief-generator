@@ -36,33 +36,55 @@ if not keyword and not topic:
 query = keyword or topic
 
 # ---- Bing Results (Scrape up to 3 pages, remove duplicates) ----
-def fetch_bing_urls(query):
+def fetch_bing_urls(query, pages=3):
     headers = {"User-Agent": "Mozilla/5.0"}
-    unique_domains = set()
-    filtered_links = []
+    links = []
 
-    for page in range(0, 3):  # Page 1, 2, 3
-        first = page * 10 + 1
+    for page in range(pages):
+        offset = page * 10
+        url = f"https://www.bing.com/search?q={query}&first={offset}"
         try:
-            url = f"https://www.bing.com/search?q={query}&first={first}"
             r = requests.get(url, headers=headers, timeout=10)
             soup = BeautifulSoup(r.text, "html.parser")
-            anchors = soup.select("li.b_algo h2 a")
 
-            for a in anchors:
-                href = a.get("href")
-                if href and href.startswith("http"):
-                    domain = urlparse(href).netloc
-                    if domain not in unique_domains:
-                        unique_domains.add(domain)
-                        filtered_links.append(href)
-
-                if len(filtered_links) >= 10:
-                    break
+            result_blocks = soup.find_all("li", class_="b_algo")
+            for block in result_blocks:
+                a_tag = block.find("a", href=True)
+                if a_tag and a_tag["href"].startswith("http"):
+                    links.append(a_tag["href"])
         except Exception as e:
-            continue
+            print(f"Error on Bing page {page+1}: {e}")
 
-    return filtered_links[:10]
+    return list(dict.fromkeys(links))  # Deduplicated list
+
+
+def fetch_google_urls(query, scraperapi_key, pages=1):
+    links = []
+    headers = {"User-Agent": "Mozilla/5.0"}
+
+    for page in range(pages):
+        start = page * 10
+        url = f"http://api.scraperapi.com/?api_key={scraperapi_key}&url=https://www.google.com/search?q={query}&start={start}"
+        try:
+            r = requests.get(url, headers=headers, timeout=10)
+            soup = BeautifulSoup(r.text, "html.parser")
+            for g in soup.find_all("div", class_="tF2Cxc"):
+                a_tag = g.find("a", href=True)
+                if a_tag and a_tag["href"].startswith("http"):
+                    links.append(a_tag["href"])
+        except Exception as e:
+            print(f"Error fetching from Google: {e}")
+
+    return list(dict.fromkeys(links))  # Deduplicated list
+
+
+def fetch_urls_with_fallback(query, scraperapi_key):
+    bing_links = fetch_bing_urls(query)
+    if len(bing_links) >= 3:
+        return bing_links
+    else:
+        print("Bing results insufficient. Falling back to Google...")
+        return fetch_google_urls(query, scraperapi_key)
 
 
 # ---- Scrape URLs ----
@@ -187,7 +209,7 @@ Write a detailed article from this outline:
 # ---------- Streamlit Flow ------------
 st.subheader("🔍 SERP Insights (TLDR, Context, Unique Angle)")
 
-urls = fetch_bing_urls(query)
+urls = fetch_urls_with_fallback(query, scraperapi_key)
 st.markdown("### 🔗 Top SERP URLs")
 for u in urls:
     st.markdown(f"- [{u}]({u})")
