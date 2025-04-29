@@ -1,74 +1,136 @@
+# --- Final Streamlit SEO Brief Generator App ---
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
+from urllib.parse import urlparse
 import openai
+import time
 
-# Load API keys securely
+# Load secrets
 openai.api_key = st.secrets["openai_api_key"]
+scraperapi_key = st.secrets["scraperapi_key"]
 
-# Basic Streamlit UI
+st.set_page_config(page_title="SEO Brief Generator", layout="wide")
 st.title("SEO Brief Generator")
-query = st.text_input("Enter a keyword to generate a brief")
 
-# Helper to scrape Bing SERP
-def fetch_top_results(query, num_results=3):
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
-    results = []
-    response = requests.get(
-        f"https://www.bing.com/search?q={query}",
-        headers=headers
-    )
-    soup = BeautifulSoup(response.text, "html.parser")
-    links = soup.select("li.b_algo h2 a")[:num_results]
-    for link in links:
-        href = link.get("href")
-        text = link.get_text()
-        results.append((text, href))
-    return results
+# --- User Inputs ---
+keyword = st.text_input("Enter a keyword to generate a brief")
+company_name = st.text_input("Company name")
+company_url = st.text_input("Website URL (for internal links)")
+sitemap_url = st.text_input("Optional: Sitemap URL (not used yet)")
 
-# Helper to generate SEO brief
-def generate_brief(query, urls):
-    prompt = f"""You are an SEO content strategist. Write a detailed SEO content brief for the keyword: "{query}" based on the following top search result URLs:\n\n"""
+def fetch_bing_urls(query):
+    headers = {"User-Agent": "Mozilla/5.0"}
+    for _ in range(3):
+        try:
+            r = requests.get(f"https://www.bing.com/search?q={query}", headers=headers)
+            soup = BeautifulSoup(r.text, "html.parser")
+            links = [a["href"] for a in soup.select("li.b_algo h2 a") if a["href"].startswith("http")]
+            if links:
+                return links[:10]
+        except Exception:
+            time.sleep(1)
+    return []
 
-    for title, url in urls:
-        prompt += f"- {title}: {url}\n"
+def scrape_with_scraperapi(url):
+    for _ in range(3):
+        try:
+            full_url = f"http://api.scraperapi.com?api_key={scraperapi_key}&url={url}"
+            r = requests.get(full_url, timeout=20)
+            soup = BeautifulSoup(r.text, "html.parser")
+            title = soup.title.string.strip() if soup.title else ""
+            meta = soup.find("meta", attrs={"name": "description"})
+            meta_desc = meta["content"].strip() if meta and "content" in meta.attrs else ""
+            h1 = [h.get_text(strip=True) for h in soup.find_all("h1")]
+            h2 = [h.get_text(strip=True) for h in soup.find_all("h2")]
+            h3 = [h.get_text(strip=True) for h in soup.find_all("h3")]
+            h4 = [h.get_text(strip=True) for h in soup.find_all("h4")]
+            return {"url": url, "title": title, "meta": meta_desc, "headings": h1 + h2 + h3 + h4}
+        except Exception:
+            time.sleep(1)
+    return None
 
-    prompt += """
-Include:
-1. Recommended blog structure (H1, H2, H3).
-2. Target audience.
-3. Search intent.
-4. Recommended word count.
-5. Internal linking suggestions (for a B2B SaaS company).
-6. Important stats or quotes (even hypothetical).
-7. Bonus section ideas for added value.
+def generate_brief(keyword, pages, company_name, company_url):
+    extracted = ""
+    for p in pages:
+        extracted += f"URL: {p['url']}\nTitle: {p['title']}\nMeta: {p['meta']}\nHeadings: {p['headings']}\n---\n"
 
-Make the brief practical and human-friendly.
+    prompt = f"""
+You are an advanced SEO strategist. Given the data below from top-ranking pages, generate a smart SEO content brief.
+
+Keyword: {keyword}
+Company: {company_name} ({company_url})
+SERP Data:
+{extracted}
+
+Brief must include:
+- Search intent
+- Primary keyword, secondary keywords, NLP/semantic terms
+- Unique angle (linked to the company if relevant)
+- Suggested H1, H2, H3 structure with writer-friendly context
+- Internal link ideas only if status is 200 on {company_url}
+- Valid external sources
+- No generic or AI-sounding words like 'embrace', 'paradigm', 'landscape'
+- Avoid outdated year suggestions (use {time.strftime('%Y')})
+
+Give only clean, human-sounding output.
 """
 
-    completion = openai.ChatCompletion.create(
+    response = openai.ChatCompletion.create(
         model="gpt-4",
         messages=[
-            {"role": "system", "content": "You are an SEO expert."},
+            {"role": "system", "content": "You are an SEO strategist generating conversion-focused briefs."},
             {"role": "user", "content": prompt}
-        ],
-        temperature=0.7
+        ]
     )
-    return completion.choices[0].message.content.strip()
+    return response.choices[0].message.content.strip()
 
-# Main logic
-if query:
-    with st.spinner("Fetching top search results..."):
-        top_urls = fetch_top_results(query)
+# --- Pipeline ---
+if keyword and company_name and company_url:
+    with st.spinner("Fetching Bing results..."):
+        urls = fetch_bing_urls(keyword)
 
-    st.subheader("Top SERP URLs")
-    for title, url in top_urls:
-        st.markdown(f"- [{title}]({url})")
+    st.markdown("### Top SERP URLs")
+    for u in urls:
+        st.markdown(f"- [{u}]({u})")
 
-    with st.spinner("Generating SEO brief..."):
-        brief = generate_brief(query, top_urls)
+    scraped = []
+    for u in urls:
+        with st.spinner(f"Scraping: {u}"):
+            data = scrape_with_scraperapi(u)
+            if data:
+                scraped.append(data)
 
-    st.subheader("Generated SEO Content Brief")
-    st.markdown(brief)
+    if scraped:
+        with st.spinner("Generating brief..."):
+            brief = generate_brief(keyword, scraped, company_name, company_url)
+        st.subheader("Generated Brief")
+        st.text_area("SEO Brief", brief, height=600)
+        st.download_button("📥 Download Brief", brief, file_name=f"{keyword.replace(' ', '_')}_seo_brief.txt")
+
+        # Step 2: Content Generation
+        st.markdown("## ✍️ Generate Content from Outline")
+        default_outline = "\n".join([f"H1: {keyword.title()}"])
+        outline = st.text_area("Edit or approve outline (format: H1:, H2:, H3:)", value=default_outline)
+
+        if st.button("Generate Article"):
+            prompt = f"""
+Write an article based on this outline. Avoid fluff and filler. Do not use overly formal or AI-sounding language.
+
+Company: {company_name}
+URL: {company_url}
+Outline:
+{outline}
+
+Generate the article now:
+"""
+            content = openai.ChatCompletion.create(
+                model="gpt-4",
+                messages=[
+                    {"role": "system", "content": "You write clear, SEO-optimized articles without fluff."},
+                    {"role": "user", "content": prompt}
+                ]
+            )
+            article = content.choices[0].message.content.strip()
+            st.subheader("Generated Article")
+            st.text_area("SEO Article", article, height=800)
