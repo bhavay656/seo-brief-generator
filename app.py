@@ -221,15 +221,22 @@ if query and company_name and company_url:
             brief = generate_brief(scraped, query, company_name, company_url, sitemap_topics)
             st.session_state["brief"] = brief
 
-    if "brief" in st.session_state:
-        st.subheader("📄 SEO Content Brief")
-        st.markdown("✏️ *You can edit the brief before generating final content.*")
-        brief_text = st.text_area("SEO Brief", st.session_state["brief"], height=600)
-        st.download_button("📥 Download Brief", brief_text, file_name=f"{query.replace(' ', '_')}_brief.txt")
+  if "brief" in st.session_state:
+    st.subheader("📄 SEO Content Brief")
+    st.markdown("✏️ *You can edit the brief before generating final content.*")
+    brief_text = st.text_area("SEO Brief", st.session_state["brief"], height=600)
+    st.download_button("📥 Download Brief", brief_text, file_name=f"{query.replace(' ', '_')}_brief.txt")
 
-        # Extract outline from brief for content generation
-        outline_lines = [line for line in brief_text.splitlines() if line.strip().startswith(("H1", "H2", "H3"))]
-        default_outline = "\n".join(outline_lines)
+    # Extract SERP-matching outline from brief while enforcing clean, non-diluting format
+    outline_lines = [
+        re.sub(r"[:\\-]", "", line).strip()
+        for line in brief_text.splitlines()
+        if line.strip().startswith(("H1", "H2", "H3"))
+    ]
+    default_outline = "\n".join(outline_lines)
+    st.markdown("## ✏️ Generate Content from Outline")
+    st.markdown("*We’ve preserved the H1 and key structure from top SERPs. Feel free to edit, but avoid altering the search intent.*")
+
         st.markdown("## ✏️ Generate Content from Outline")
         outline_input = st.text_area("Edit or approve outline", value=default_outline, height=300)
 
