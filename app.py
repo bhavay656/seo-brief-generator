@@ -58,24 +58,24 @@ def fetch_bing_urls(query, pages=3):
     return list(dict.fromkeys(links))  # Deduplicated list
 
 
-def fetch_google_urls(query, scraperapi_key, pages=1):
-    links = []
+def fetch_google_urls(query):
     headers = {"User-Agent": "Mozilla/5.0"}
+    target_url = f"https://www.google.com/search?q={query}"
+    api_url = f"http://api.scraperapi.com?api_key={scraperapi_key}&url={target_url}"
 
-    for page in range(pages):
-        start = page * 10
-        url = f"http://api.scraperapi.com/?api_key={scraperapi_key}&url=https://www.google.com/search?q={query}&start={start}"
-        try:
-            r = requests.get(url, headers=headers, timeout=10)
-            soup = BeautifulSoup(r.text, "html.parser")
-            for g in soup.find_all("div", class_="tF2Cxc"):
-                a_tag = g.find("a", href=True)
-                if a_tag and a_tag["href"].startswith("http"):
-                    links.append(a_tag["href"])
-        except Exception as e:
-            print(f"Error fetching from Google: {e}")
+    response = requests.get(api_url, headers=headers, timeout=10)
+    soup = BeautifulSoup(response.text, "html.parser")
 
-    return list(dict.fromkeys(links))  # Deduplicated list
+    links = []
+    for a in soup.select("a"):
+        href = a.get("href")
+        if href and href.startswith("/url?q=http"):
+            link = href.split("/url?q=")[1].split("&")[0]
+            if link.startswith("http"):
+                links.append(link)
+
+    return links[:10]
+
 
 
 def fetch_urls_with_fallback(query, scraperapi_key):
