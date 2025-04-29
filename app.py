@@ -34,15 +34,20 @@ def fetch_bing_urls(query):
         r = requests.get(f"https://www.bing.com/search?q={query}", headers=headers, timeout=10)
         soup = BeautifulSoup(r.text, "html.parser")
         links = [a["href"] for a in soup.select("li.b_algo h2 a") if a["href"].startswith("http")]
+
+        # Remove duplicate domains
         unique_domains = set()
-filtered_links = []
-for link in links:
-    domain = re.sub(r"^https?://(www\.)?", "", link).split("/")[0]
-    if domain not in unique_domains:
-        unique_domains.add(domain)
-        filtered_links.append(link)
-return filtered_links[:10]
-    except:
+        filtered_links = []
+        for link in links:
+            domain = re.sub(r"^https?://(www\.)?", "", link).split("/")[0]
+            if domain not in unique_domains:
+                unique_domains.add(domain)
+                filtered_links.append(link)
+
+        return filtered_links[:10]
+
+    except Exception as e:
+        print("Bing scraping error:", e)
         return []
 
 # ---- Scrape URLs ----
