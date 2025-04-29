@@ -115,20 +115,34 @@ if "brief" in st.session_state:
     st.markdown("## ✏️ Generate Content from Outline")
     outline_input = st.text_area("Edit or approve outline", value=default_outline, height=300)
 
-    if st.button("🚀 Generate Article"):
-prompt = f"""You are an SEO writer for {company_name} ({company_url}).
+    if user_feedback:
+    prompt = f"""You are an SEO writer for {company_name} ({company_url}).
 
 Write a clear, detailed, human-sounding article using the following outline:
 
-{outline}
+{outline_input}
 
-— Match SERP title (H1) to search intent
-— Minimum word count: 1800
-— Tone: Clean, natural, human
-— Embed primary/secondary keywords and NLP terms
-— Avoid exaggerated claims or AI language
-— {f'User feedback: ' + user_feedback if user_feedback else ''}
+— Match SERP title (H1) to search intent  
+— Minimum word count: 1800  
+— Tone: Clean, natural, human  
+— Embed primary/secondary keywords and NLP terms  
+— Avoid exaggerated claims or AI-generated language  
+— User feedback: {user_feedback}
 """
+else:
+    prompt = f"""You are an SEO writer for {company_name} ({company_url}).
+
+Write a clear, detailed, human-sounding article using the following outline:
+
+{outline_input}
+
+— Match SERP title (H1) to search intent  
+— Minimum word count: 1800  
+— Tone: Clean, natural, human  
+— Embed primary/secondary keywords and NLP terms  
+— Avoid exaggerated claims or AI-generated language
+"""
+
         try:
             res = client.chat.completions.create(
                 model="gpt-4",
