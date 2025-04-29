@@ -143,30 +143,29 @@ Write a clear, detailed, human-sounding article using the following outline:
 – Avoid exaggerated claims or AI-generated language
 """
 
-
-        try:
-            res = client.chat.completions.create(
-                model="gpt-4",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.4
-            )
-            st.session_state["article"] = res.choices[0].message.content.strip()
-        except:
-            st.session_state["article"] = "Failed to generate."
+try:
+    res = client.chat.completions.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.4
+    )
+    st.session_state["article"] = res.choices[0].message.content.strip()
+except:
+    st.session_state["article"] = "Failed to generate."
 
 if "article" in st.session_state:
     st.subheader("📝 Generated Article")
     st.text_area("SEO Article", st.session_state["article"], height=800)
     st.download_button("📥 Download Article", st.session_state["article"], file_name=f"{query.replace(' ', '_')}_article.txt")
 
-    feedback = st.text_area("🔁 Suggest edits to improve the article below", key="feedback")
+    feedback = st.text_area("💬 Suggest edits to improve the article below", key="feedback")
     if st.button("🔄 Improve Article Based on Feedback"):
-        feedback_prompt = f"Here is an article:
-
-{st.session_state['article']}
-
-Improve it based on this feedback:
-{feedback}"
+        feedback_prompt = (
+            "Here is an article:\n"
+            f"{st.session_state['article']}\n\n"
+            "Improve it based on this feedback:\n"
+            f"{feedback}"
+        )
         try:
             res = client.chat.completions.create(
                 model="gpt-4",
