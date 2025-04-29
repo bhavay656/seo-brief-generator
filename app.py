@@ -8,41 +8,39 @@ from urllib.parse import urlparse
 import time
 
 st.set_page_config(page_title="SEO Brief Generator", layout="wide")
-st.title("SEO Content Brief Generator")
-st.caption("Generate structured, search-intent-aligned briefs from live SERPs")
+st.title("SEO Brief Generator")
 
-openai_api_key = st.text_input("Enter your OpenAI API Key", type="password")
-scraperapi_key = st.text_input("Enter your ScraperAPI Key", type="password")
-company_name = st.text_input("Enter your Company Name")
-company_url = st.text_input("Enter your Company Website URL (e.g., yourcompany.com)")
-sitemap_urls = st.text_input("Enter Sitemap URLs (comma-separated)")
-keyword = st.text_input("Enter the Target Keyword")
+openai_api_key = st.text_input("Enter OpenAI API Key", type="password")
+scraperapi_key = st.text_input("Enter ScraperAPI Key", type="password")
+company_name = st.text_input("Company Name")
+company_url = st.text_input("Company URL")
+sitemap_urls = st.text_input("Sitemap URLs (comma-separated)")
+keyword = st.text_input("Target Keyword")
 
+# Fetch Bing URLs
 def fetch_bing_urls(keyword):
     headers = {"User-Agent": "Mozilla/5.0"}
     urls = []
     try:
         search_url = f"https://www.bing.com/search?q={'+'.join(keyword.split())}&count=20"
-        response = requests.get(search_url, headers=headers, timeout=15)
+        response = requests.get(search_url, headers=headers, timeout=10)
         soup = BeautifulSoup(response.text, "html.parser")
-        seen = set()
         for tag in soup.select("li.b_algo h2 a"):
             href = tag.get("href")
-            domain = urlparse(href).netloc
-            if domain and domain not in seen and 'bing.com' not in href:
-                seen.add(domain)
+            if href and "bing.com" not in href:
                 urls.append(href)
-        return urls[:10]
-    except Exception:
-        return []
+    except:
+        pass
+    return urls[:10]
 
-async def scrape_url(session, url, scraperapi_key):
+# Async scrape
+async def scrape_url(session, url, api_key):
     try:
-        final_url = f"http://api.scraperapi.com/?api_key={scraperapi_key}&url={url}&render=true"
-        async with session.get(final_url, timeout=60) as resp:
+        final_url = f"http://api.scraperapi.com/?api_key={api_key}&url={url}&render=true"
+        async with session.get(final_url, timeout=30) as resp:
             html = await resp.text()
             soup = BeautifulSoup(html, 'html.parser')
-            title = soup.title.string.strip() if soup.title else "N/A"
+            title = soup.title.string.strip() if soup.title else ""
             meta = ""
             for tag in soup.find_all("meta"):
                 if tag.get("name") == "description" or tag.get("property") == "og:description":
@@ -50,123 +48,111 @@ async def scrape_url(session, url, scraperapi_key):
                     break
             headings = [f"{tag.name.upper()}: {tag.get_text(strip=True)}" for tag in soup.find_all(["h1", "h2", "h3", "h4"])]
             schemas = []
-            if 'FAQPage' in html:
-                schemas.append("FAQPage")
-            if 'BlogPosting' in html:
-                schemas.append("BlogPosting")
-            if 'WebPage' in html:
-                schemas.append("WebPage")
-            return {
-                "url": url, "title": title, "meta": meta,
-                "headings": headings, "schemas": schemas, "raw_html": html
-            }
+            for tag in ["FAQPage", "WebPage", "ItemList", "BlogPosting", "QAPage"]:
+                if tag in html:
+                    schemas.append(tag)
+            return {"url": url, "title": title, "meta": meta, "headings": headings, "schemas": schemas}
     except:
-        return {"url": url, "error": "Scraping failed"}
+        return {"url": url, "error": "Scrape Failed"}
 
-async def scrape_all(urls, scraperapi_key):
+async def scrape_all(urls, key):
     results = []
-    batch_size = 3
     async with aiohttp.ClientSession() as session:
-        for i in range(0, len(urls), batch_size):
-            batch = urls[i:i + batch_size]
-            tasks = [scrape_url(session, url, scraperapi_key) for url in batch]
+        for i in range(0, len(urls), 3):
+            batch = urls[i:i+3]
+            tasks = [scrape_url(session, u, key) for u in batch]
             results.extend(await asyncio.gather(*tasks))
             st.success(f"Scraped {len(results)} URLs so far...")
-            time.sleep(2)
     return results
 
-def generate_detailed_prompt(keyword, results, sitemap_urls, company_name, company_url):
-    detail_sections = ""
+# Step 1: Get Competitor Observations
+def get_observations(results):
+    observations = ""
     for r in results:
         if 'error' in r:
             continue
-        headings = "\\n".join(r['headings'])
-        schemas = ', '.join(r['schemas']) if r['schemas'] else "None"
-        detail_sections += f"""
-URL: {r['url']}
-Title: {r['title']}
-Meta: {r['meta']}
-Schemas: {schemas}
-Headings:
-{headings}
+        observations += f"\nSource URL: {r['url']}\nTitle: {r['title']}\nMeta: {r['meta']}\nSchemas: {', '.join(r['schemas'])}\n"
+        observations += "Headings Observed:\n" + "\n".join(f"- {h}" for h in r['headings'])
+        # Add prompt to generate insight
+        context_prompt = f"""
+Below are the extracted meta and headings from a webpage:
+META: {r['meta']}
+HEADINGS:
+{r['headings']}
 
-TLDR: [Summarize what this page is about]
-Context for Writer: [Summarize what each section is covering]
-Unique Angle: [If something stands out or differs from others]
+TLDR: Provide a 1-line summary of this URL
+Context for Writer: What does this page primarily try to address?
+Unique Angle: What makes this different or helpful compared to others?
 
----
-"""
+Return in this format:
+TLDR: ...
+Context for Writer: ...
+Unique Angle: ...
+        """.strip()
+        openai_client = openai.OpenAI(api_key=openai_api_key)
+        insight = openai_client.chat.completions.create(
+            model="gpt-4",
+            messages=[{"role": "user", "content": context_prompt}]
+        ).choices[0].message.content.strip()
+        observations += f"\n{insight}\n{'-'*60}\n"
+    return observations
 
-    prompt = f'''
-You are an expert SEO content strategist.
+# Step 2: Final Brief Generator
+def generate_brief(keyword, observations, sitemap_urls, company_name, company_url):
+    prompt = f"""
+You're an expert SEO strategist. Using the below SERP observations, generate a clear, fluff-free SEO brief that is aligned with dominant search intent.
 
-Keyword: {keyword}
-Company: {company_name}
-Website: {company_url}
-Sitemap: {sitemap_urls}
+Primary Keyword: {keyword}
+Sitemap URLs: {sitemap_urls}
+Company: {company_name}, URL: {company_url}
 
-Here are full details from top-ranking URLs:
-{detail_sections}
-
-Now write a complete SEO content brief.
+Observations from Top URLs:
+{observations}
 
 Include:
-- Primary Keyword
-- Secondary Keywords
-- NLP/Semantic Suggestions
-- Search-Intent-Aligned Keyword Clusters
-- Heading Structure (H1, H2, H3s) based on majority SERP flow
-- Under each heading: a brief "Context for Writer"
-- Internal Linking Suggestions from sitemap
-- External Link Search Suggestions (but not direct competitors)
-- Schema Suggestions
-- No fluff. No markdown.
-- Structure by awareness–consideration–decision if present in SERP
+- Primary & Secondary Keywords
+- NLP & Semantic Suggestions
+- Keyword Clusters
+- Heading Structure (H1, H2, H3)
+- Context under each heading (for writers)
+- Internal Link suggestions from sitemap URLs
+- External Link types (not competitors)
+- SERP Differentiation Ideas
+- Don't use markdown or emojis
+- Structure it for clear skimmability in the Streamlit output
+    """.strip()
 
-Avoid generic suggestions. Focus on intent. If SERP is transactional, begin directly from consideration/decision-level.
-'''
-
-    return prompt
-
-def call_openai_brief(prompt, openai_api_key):
     client = openai.OpenAI(api_key=openai_api_key)
-    response = client.chat.completions.create(
+    result = client.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": prompt}]
     )
-    return response.choices[0].message.content
+    return result.choices[0].message.content.strip()
 
+# MAIN FLOW
 if st.button("Generate SEO Brief"):
-    if openai_api_key and scraperapi_key and keyword and company_url:
-        with st.spinner("Fetching top Bing URLs..."):
-            urls = fetch_bing_urls(keyword)
-            if len(urls) < 5:
-                st.error("Less than 5 valid results.")
-                st.stop()
-            st.success(f"Fetched {len(urls)} URLs.")
-            for i, u in enumerate(urls):
-                st.write(f"{i+1}. [{u}]({u})")
+    if not all([openai_api_key, scraperapi_key, keyword, company_url]):
+        st.error("Please fill all required fields.")
+        st.stop()
 
-        with st.spinner("Scraping URLs..."):
-            results = asyncio.run(scrape_all(urls, scraperapi_key))
+    with st.spinner("Fetching Top 10 Bing URLs..."):
+        urls = fetch_bing_urls(keyword)
+        if len(urls) < 5:
+            st.error("Failed to fetch enough URLs.")
+            st.stop()
+        st.success(f"Fetched {len(urls)} URLs.")
+        for idx, url in enumerate(urls):
+            st.markdown(f"{idx+1}. [{url}]({url})")
 
+    with st.spinner("Scraping URLs..."):
+        results = asyncio.run(scrape_all(urls, scraperapi_key))
+
+    with st.spinner("Generating SERP Observations..."):
+        insight_text = get_observations(results)
         st.subheader("Scraped URL Insights")
-        all_obs = ""
-        for r in results:
-            if 'error' in r:
-                continue
-            all_obs += f"\nSource URL: {r['url']}\nTitle: {r['title']}\nMeta: {r['meta']}\nSchemas Detected: {', '.join(r['schemas']) or 'None'}\n"
-            all_obs += "\nHeadings Observed:\n"
-            for h in r['headings']:
-                all_obs += f"- {h}\n"
-            all_obs += "\nTLDR: \nContext for Writer: \nUnique Angle: \n\n---\n\n"
-        st.text_area("Full Observations", all_obs, height=500)
+        st.text_area("Full Observations", value=insight_text, height=600)
 
-        with st.spinner("Generating Final SEO Brief..."):
-            prompt = generate_detailed_prompt(keyword, results, sitemap_urls, company_name, company_url)
-            brief = call_openai_brief(prompt, openai_api_key)
-
-        st.subheader("Generated Final SEO Brief")
-        st.text_area("SEO Brief", brief, height=800)
-    else:
-        st.error("Please fill all fields.")
+    with st.spinner("Generating Final SEO Brief..."):
+        final = generate_brief(keyword, insight_text, sitemap_urls, company_name, company_url)
+        st.subheader("Generated Full SEO Content Brief")
+        st.text_area("SEO Content Brief", value=final, height=800)
