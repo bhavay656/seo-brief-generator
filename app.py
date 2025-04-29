@@ -139,7 +139,7 @@ if st.button("Generate SEO Brief"):
             else:
                 failed_urls.append(res['url'])
 
-        with st.spinner('Generating Brief using OpenAI..."):
+with st.spinner('Generating Brief using OpenAI...'):
             full_brief = generate_brief(keyword, headings_all)
 
         st.header("Generated Full SEO Content Brief")
