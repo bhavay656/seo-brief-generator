@@ -129,7 +129,7 @@ if st.button("Generate SEO Brief"):
                     source_insights += f"- {h}\n"
                 source_insights += "\n"
 
-st.subheader("Scraped URL Insights")
+        st.subheader("Scraped URL Insights")
         st.text_area("Full Observations", value=source_insights, height=400)
 
         with st.spinner("Generating Brief using OpenAI..."):
