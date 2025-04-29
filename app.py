@@ -203,8 +203,8 @@ if query and company_name and company_url:
     st.markdown("### 🔍 SERP Insights (TLDR, Context, Unique Angle)")
     for i in st.session_state["insights"]:
         st.markdown(f"**URL:** [{i['url']}]({i['url']})")
-        st.markdown(f"**Title:** {i['title']}")
-        st.markdown(f"**Meta Description:** {i['meta']}")
+        st.markdown(f"**Title:** {i.get('title', 'N/A')}")
+st.markdown(f"**Meta Description:** {i.get('meta', 'N/A')}")
         st.markdown("**Headings (as per document flow):**")
         for h in i['headings']:
             indent = "  " if h.startswith("H4") else " " if h.startswith("H3") else ""
