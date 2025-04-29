@@ -115,23 +115,21 @@ if st.button("Generate SEO Brief"):
 
         with st.spinner("Scraping URL content..."):
             results = asyncio.run(scrape_all(urls, scraperapi_key))
-
         source_insights = ""
         for r in results:
             if 'error' not in r:
-source_insights += (
-    f"\nSource URL: {r['url']}\n"
-    f"Title: {r['title']}\n"
-    f"Meta: {r['meta']}\n"
-    f"Schemas Detected: {', '.join(r['schemas']) if r['schemas'] else 'None'}\n"
-    f"Headings Observed:\n"
-)
-for h in r['headings']:
-    source_insights += f"- {h}\n"
-source_insights += "\n"
+                source_insights += (
+                    f"\nSource URL: {r['url']}\n"
+                    f"Title: {r['title']}\n"
+                    f"Meta: {r['meta']}\n"
+                    f"Schemas Detected: {', '.join(r['schemas']) if r['schemas'] else 'None'}\n"
+                    "Headings Observed:\n"
+                )
+                for h in r['headings']:
+                    source_insights += f"- {h}\n"
+                source_insights += "\n"
 
-
-        st.subheader("Scraped URL Insights")
+st.subheader("Scraped URL Insights")
         st.text_area("Full Observations", value=source_insights, height=400)
 
         with st.spinner("Generating Brief using OpenAI..."):
