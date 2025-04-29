@@ -202,15 +202,15 @@ if query and company_name and company_url:
 
     st.markdown("### 🔍 SERP Insights (TLDR, Context, Unique Angle)")
     for i in st.session_state["insights"]:
-        st.markdown(f"**URL:** [{i['url']}]({i['url']})")
-        st.markdown(f"**Title:** {i.get('title', 'N/A')}")
-st.markdown(f"**Meta Description:** {i.get('meta', 'N/A')}")
-        st.markdown("**Headings (as per document flow):**")
-        for h in i['headings']:
-            indent = "  " if h.startswith("H4") else " " if h.startswith("H3") else ""
-            st.markdown(f"{indent}- {h}")
-        st.markdown(i['insight'])
-        st.markdown("---")
+    st.markdown(f"**URL:** [{i['url']}]({i['url']})")
+    st.markdown(f"**Title:** {i.get('title', 'N/A')}")
+    st.markdown(f"**Meta Description:** {i.get('meta', 'N/A')}")
+    st.markdown("**Headings (as per document flow):**")
+    for h in i["headings"]:
+        indent = "  " if h.startswith("H4") else " " if h.startswith("H3") else ""
+        st.markdown(f"{indent}- {h}")
+    st.markdown(i["insight"])
+    st.markdown("---")
 
     sitemap_topics = parse_sitemap_topics(sitemap_url) if sitemap_url else []
 
