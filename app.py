@@ -14,26 +14,35 @@ st.set_page_config(page_title="SEO Brief Generator", layout="wide")
 st.title("SEO Brief Generator")
 
 # Resolve redirected/shortened URLs using ScraperAPI when needed
-def resolve_redirected_url(url):
+def resolve_and_clean(url):
     try:
-        if "bing.com/ck/a" in url:
-            api_url = f"http://api.scraperapi.com?api_key={scraperapi_key}&url={url}"
-            r = requests.get(api_url, timeout=10)
+        if "bing.com/ck/a?" in url:
+            # Use ScraperAPI to resolve the redirect from the ck/a? Bing jump
+            proxied = f"http://api.scraperapi.com?api_key={scraperapi_key}&url={url}"
+            r = requests.get(proxied, timeout=10)
+            soup = BeautifulSoup(r.text, "html.parser")
+
+            # Check meta redirect
+            meta = soup.find("meta", attrs={"http-equiv": "refresh"})
+            if meta and "url=" in meta.get("content", ""):
+                final_url = meta["content"].split("url=")[-1].strip()
+                if "bing.com" not in final_url and "scraperapi.com" not in final_url:
+                    return final_url
+
+            # Fallback to anchor href
+            a = soup.find("a", href=True)
+            if a and "bing.com" not in a["href"] and "scraperapi.com" not in a["href"]:
+                return a["href"]
+
+            return None  # Still stuck on redirect
         else:
-            r = requests.get(url, timeout=10)
-        soup = BeautifulSoup(r.text, "html.parser")
-
-        meta = soup.find("meta", attrs={"http-equiv": "refresh"})
-        if meta and "url=" in meta.get("content", ""):
-            return meta["content"].split("url=")[-1].strip()
-
-        canonical = soup.find("link", rel="canonical")
-        if canonical and canonical.get("href"):
-            return canonical["href"]
-
-        return r.url
+            r = requests.get(url, timeout=10, allow_redirects=True)
+            if r.url and "bing.com" not in r.url and "scraperapi.com" not in r.url:
+                return r.url
+            return None
     except:
-        return url
+        return None
+
 
 # Get input
 keyword = st.text_input("Target Keyword (optional)")
