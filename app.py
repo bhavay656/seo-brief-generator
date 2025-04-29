@@ -1,12 +1,12 @@
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urlparse
-import openai
 import time
+from openai import OpenAI
+from urllib.parse import urlparse
 
 # Load secrets
-openai.api_key = st.secrets["openai_api_key"]
+client = OpenAI(api_key=st.secrets["openai_api_key"])
 scraperapi_key = st.secrets["scraperapi_key"]
 
 st.set_page_config(page_title="SEO Brief Generator", layout="wide")
@@ -82,7 +82,7 @@ Give only clean, human-sounding output.
 """
 
     try:
-        response = openai.chat.completions.create(
+        response = client.chat.completions.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": "You are an SEO strategist generating conversion-focused briefs."},
@@ -106,7 +106,7 @@ Outline:
 Generate the article now:
 """
     try:
-        response = openai.chat.completions.create(
+        response = client.chat.completions.create(
             model="gpt-4",
             messages=[
                 {"role": "system", "content": "You write clear, SEO-optimized articles without fluff."},
@@ -117,7 +117,7 @@ Generate the article now:
     except Exception as e:
         return f"❌ Error generating article: {e}"
 
-# --- Pipeline Execution ---
+# --- Execution Flow ---
 if keyword and company_name and company_url:
     with st.spinner("Fetching Bing results..."):
         urls = fetch_bing_urls(keyword)
@@ -142,7 +142,6 @@ if keyword and company_name and company_url:
             st.text_area("SEO Brief", brief, height=600)
             st.download_button("📥 Download Brief", brief, file_name=f"{keyword.replace(' ', '_')}_seo_brief.txt")
 
-            # Step 2: Content Generation
             st.markdown("## ✍️ Generate Content from Outline")
             default_outline = "\n".join([f"H1: {keyword.title()}"])
             outline = st.text_area("Edit or approve outline (format: H1:, H2:, H3:)", value=default_outline)
@@ -152,6 +151,6 @@ if keyword and company_name and company_url:
                 st.subheader("Generated Article")
                 st.text_area("SEO Article", article, height=800)
         else:
-            st.error("❌ Scraping failed for all URLs. Try another keyword or check your API key.")
+            st.error("❌ Scraping failed for all URLs.")
     else:
-        st.error("❌ No URLs fetched from Bing. Try again later or use a different keyword.")
+        st.error("❌ No URLs found from Bing.")
