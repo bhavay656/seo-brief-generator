@@ -117,26 +117,44 @@ if st.button("Generate SEO Brief"):
             results = asyncio.run(scrape_all(urls, scraperapi_key))
 
         source_insights = ""
-        for r in results:
+                for r in results:
             if 'error' not in r:
-                source_insights += f"Source URL: {r['url']}
-Title: {r['title']}
-Meta: {r['meta']}
-Schemas: {', '.join(r['schemas']) or 'None'}
-"
+                source_insights += (
+                    f"Source URL: {r['url']}\n"
+                    f"Title: {r['title']}\n"
+                    f"Meta: {r['meta']}\n"
+                    f"Schemas Detected: {', '.join(r['schemas']) if r['schemas'] else 'None'}\n"
+                    f"Headings Observed:\n"
+                )
                 for h in r['headings']:
-                    source_insights += f"- {h}
-"
-                source_insights += "
-"
+                    source_insights += f"- {h}\n"
 
-        st.subheader("Scraped URL Insights")
-        st.text_area("Full Observations", value=source_insights, height=400)
+                # Call OpenAI to summarize page insights
+                summary_prompt = f"""
+You are an expert SEO analyst. A page has the following structure:
 
-        with st.spinner("Generating Brief using OpenAI..."):
-            full_brief = generate_brief(keyword, source_insights, sitemap_urls, company_name, company_url)
+Title: {r['title']}
+Meta Description: {r['meta']}
+Headings: {' | '.join(r['headings'])}
 
-        st.subheader("Generated Full SEO Content Brief")
-        st.text_area("SEO Content Brief", full_brief, height=700)
-    else:
-        st.error("Fill all fields.")
+Please provide:
+1. TLDR (1 line summary of page goal)
+2. Context for Writer (what this page is trying to cover)
+3. Unique Angle (how it differs or adds something compared to others)
+
+Return in this format:
+TLDR: ...
+Context for Writer: ...
+Unique Angle: ...
+"""
+                try:
+                    summary = openai.ChatCompletion.create(
+                        model="gpt-4",
+                        messages=[{"role": "user", "content": summary_prompt}],
+                        api_key=openai_api_key
+                    )
+                    ai_content = summary['choices'][0]['message']['content']
+                except Exception as e:
+                    ai_content = f"(OpenAI error: {str(e)})"
+
+                source_insights += f"{ai_content}\n\n---\n\n"
