@@ -116,7 +116,19 @@ if "brief" in st.session_state:
     outline_input = st.text_area("Edit or approve outline", value=default_outline, height=300)
 
     if st.button("🚀 Generate Article"):
-        prompt = f"You are an SEO writer for {company_name}. Write a clear, detailed, human-sounding article using the following outline:
+prompt = f"""You are an SEO writer for {company_name} ({company_url}).
+
+Write a clear, detailed, human-sounding article using the following outline:
+
+{outline}
+
+— Match SERP title (H1) to search intent
+— Minimum word count: 1800
+— Tone: Clean, natural, human
+— Embed primary/secondary keywords and NLP terms
+— Avoid exaggerated claims or AI language
+— {f'User feedback: ' + user_feedback if user_feedback else ''}
+"""
 
 {outline_input}"
         try:
