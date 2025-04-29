@@ -196,22 +196,24 @@ if "brief" in st.session_state:
     brief_text = st.text_area("SEO Brief", st.session_state["brief"], height=600)
     st.download_button("📥 Download Brief", brief_text, file_name=f"{query.replace(' ', '_')}_brief.txt")
 
-    outline_lines = [re.sub(r"[:\-]", "", line).strip() for line in brief_text.splitlines() if line.strip().startswith(("H1", "H2", "H3"))]
+    
+outline_lines = [re.sub(r"[:\-]", "", line).strip() for line in brief_text.splitlines() if line.strip().startswith(("H1", "H2", "H3"))]
 default_outline = "\n".join(outline_lines)
-    st.markdown("## ✏️ Generate Content from Outline")
-    st.markdown("*We've preserved the H1 and key structure from top SERPs. Feel free to edit, but avoid altering the search intent.*")
-    outline_input = st.text_area("Edit or approve outline", value=default_outline, height=300)
 
-    if st.button("🚀 Generate Article"):
-        with st.spinner("Writing article..."):
-            article = generate_article(company_name, company_url, outline_input)
-            st.session_state["article"] = article
+st.markdown("## ✏️ Generate Content from Outline")
+st.markdown("*We've preserved the H1 and key structure from top SERPs. Feel free to edit, but avoid altering the search intent.*")
+outline_input = st.text_area("Edit or approve outline", value=default_outline, height=300)
+
+if st.button("🚀 Generate Article"):
+    with st.spinner("Writing article..."):
+        article = generate_article(company_name, company_url, outline_input)
+        st.session_state["article"] = article
 
 if "article" in st.session_state:
     st.subheader("📝 Generated Article")
     st.text_area("SEO Article", st.session_state["article"], height=800)
     st.download_button("📥 Download Article", st.session_state["article"], file_name=f"{query.replace(' ', '_')}_article.txt")
-    
+
     feedback = st.text_area("Suggest edits to improve the article below. You can give feedback multiple times.", key="feedback")
     if st.button("🔄 Improve Article Based on Feedback"):
         with st.spinner("Improving article..."):
