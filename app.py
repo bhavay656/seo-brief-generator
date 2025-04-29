@@ -5,6 +5,26 @@ from urllib.parse import quote
 from openai import OpenAI
 import re
 
+# Resolve redirected/shortened URLs
+def resolve_redirected_url(url):
+    try:
+        r = requests.get(url, timeout=10)
+        soup = BeautifulSoup(r.text, "html.parser")
+
+        # Check meta refresh
+        meta = soup.find("meta", attrs={"http-equiv": "refresh"})
+        if meta and "url=" in meta.get("content", ""):
+            return meta["content"].split("url=")[-1].strip()
+
+        # Check canonical link
+        canonical = soup.find("link", rel="canonical")
+        if canonical and canonical.get("href"):
+            return canonical["href"]
+
+        return r.url  # fallback
+    except:
+        return url
+
 client = OpenAI(api_key=st.secrets["openai_api_key"])
 scraperapi_key = st.secrets["scraperapi_key"]
 
@@ -36,6 +56,7 @@ def fetch_serp_urls(query, retries=3):
             r = requests.get(f"https://www.bing.com/search?q={query_encoded}", headers=headers, timeout=10)
             soup = BeautifulSoup(r.text, "html.parser")
             links = [a["href"] for a in soup.select("li.b_algo h2 a") if a["href"].startswith("http")]
+            links = [resolve_redirected_url(link) for link in links]
             urls = links[:10]
             if urls:
                 return urls
@@ -48,6 +69,7 @@ def fetch_serp_urls(query, retries=3):
             r = requests.get(f"http://api.scraperapi.com?api_key={scraperapi_key}&url=https://www.bing.com/search?q={query_encoded}", timeout=10)
             soup = BeautifulSoup(r.text, "html.parser")
             links = [a["href"] for a in soup.select("li.b_algo h2 a") if a["href"].startswith("http")]
+            links = [resolve_redirected_url(link) for link in links]
             urls = links[:10]
             if urls:
                 return urls
@@ -60,6 +82,7 @@ def fetch_serp_urls(query, retries=3):
             r = requests.get(f"http://api.scraperapi.com?api_key={scraperapi_key}&url=https://www.google.com/search?q={query_encoded}", timeout=10)
             soup = BeautifulSoup(r.text, "html.parser")
             links = [a["href"] for a in soup.select("a") if a["href"].startswith("http") and "google" not in a["href"]]
+            links = [resolve_redirected_url(link) for link in links]
             urls = list(dict.fromkeys(links))[:10]
             if urls:
                 return urls
@@ -67,6 +90,7 @@ def fetch_serp_urls(query, retries=3):
             continue
 
     return []
+
 
 # ---- Get Title, Meta, Headings ----
 def get_title_meta_headings(url):
