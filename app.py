@@ -142,7 +142,7 @@ if st.button("Generate SEO Brief"):
                 for h in res['headings']:
                     heading_text = h.split(": ", 1)[-1]
 context_prompt = f"What should a writer cover under this heading in an article about '{keyword}'?"
-Heading: {heading_text}"
+st.markdown(f"**Heading:** {heading_text}")
                     context = openai.ChatCompletion.create(
                         model="gpt-4",
                         messages=[{"role": "user", "content": context_prompt}],
