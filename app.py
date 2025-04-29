@@ -220,8 +220,7 @@ if query and company_name and company_url:
         with st.spinner("Creating brief..."):
             brief = generate_brief(scraped, query, company_name, company_url, sitemap_topics)
             st.session_state["brief"] = brief
-
-  if "brief" in st.session_state:
+    if "brief" in st.session_state:
     st.subheader("📄 SEO Content Brief")
     st.markdown("✏️ *You can edit the brief before generating final content.*")
     brief_text = st.text_area("SEO Brief", st.session_state["brief"], height=600)
