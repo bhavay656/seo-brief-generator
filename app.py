@@ -75,25 +75,45 @@ def parse_sitemap_topics(sitemap_url):
 
 # Generate Insight
 def get_serp_insight(page):
-    prompt = f"""
-Given this content:
-Title: {page['title']}
-Meta: {page['meta']}
-Headings: {page['headings']}
+    title = page.get("title", "").strip()
+    meta = page.get("meta", "").strip()
+    headings = page.get("headings", [])
 
-Generate:
-- TLDR (1–2 lines)
-- Writer-friendly context
-- Unique insight or approach
+    if not title and not meta and not headings:
+        return "❌ Not enough usable content to generate insight."
+
+    # Construct fallback-safe text blocks
+    title_text = title if title else "No title found"
+    meta_text = meta if meta else "No meta description"
+    headings_text = "\n".join(headings) if headings else "No headings found"
+
+    # Build prompt for OpenAI
+    prompt = f"""
+You are an SEO content analyst.
+
+Analyze the following page structure and generate:
+- A TL;DR summary (1–2 lines)
+- A writer-friendly explanation of what this page is about
+- Any unique angle or approach in the content
+
+Title: {title_text}
+Meta: {meta_text}
+Headings:
+{headings_text}
 """
+
+    # Optional: Debug view
+    with st.expander(f"🔍 Prompt sent for {page['url']}"):
+        st.code(prompt)
+
     try:
         res = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}]
         )
         return res.choices[0].message.content.strip()
-    except:
-        return "❌ Insight generation failed."
+    except Exception as e:
+        return f"❌ OpenAI error: {str(e)}"
 
 # Generate Brief
 def generate_brief(pages, query, company_name, company_url, sitemap_topics):
