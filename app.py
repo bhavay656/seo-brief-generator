@@ -115,9 +115,7 @@ if st.button("Generate SEO Brief"):
 
         with st.spinner("Scraping URL content..."):
             results = asyncio.run(scrape_all(urls, scraperapi_key))
-
         source_insights = ""
-
         for r in results:
             if 'error' not in r:
                 source_insights += (
@@ -130,43 +128,39 @@ if st.button("Generate SEO Brief"):
                 for h in r['headings']:
                     source_insights += f"- {h}\n"
 
-                # Call OpenAI to interpret this page
+                # Call OpenAI to summarize page insights
                 summary_prompt = f"""
-You are an expert SEO content strategist.
-
-Given the following data from a web page, provide:
-1. TLDR (1-line summary of the page's goal)
-2. Context for Writer (what this page is trying to cover based on its headings)
-3. Unique Angle (what stands out or differs compared to other similar pages)
+You are an expert SEO analyst. A page has the following structure:
 
 Title: {r['title']}
-Meta: {r['meta']}
-Headings: {" | ".join(r['headings'])}
+Meta Description: {r['meta']}
+Headings: {', '.join(r['headings'])}
 
-Respond in this format:
+Please provide:
+1. TLDR (1 line summary of page goal)
+2. Context for Writer (what this page is trying to cover based on its headings)
+3. Unique Angle (how it differs or adds something compared to others)
+
+Return in this format:
 TLDR: ...
 Context for Writer: ...
 Unique Angle: ...
-                """.strip()
+""".strip()
 
                 try:
                     from openai import OpenAI
-
-client = OpenAI(api_key=openai_api_key)
-
-response = client.chat.completions.create(
-    model="gpt-4",
-    messages=[
-        {"role": "system", "content": "You are a top-tier SEO content strategist."},
-        {"role": "user", "content": summary_prompt}
-    ]
-)
-summary_text = response.choices[0].message.content
-
-                    summary_text = summary.choices[0].message.content
-                    source_insights += summary_text + "\n\n---\n\n"
+                    client = OpenAI(api_key=openai_api_key)
+                    response = client.chat.completions.create(
+                        model="gpt-4",
+                        messages=[
+                            {"role": "system", "content": "You are a top-tier SEO content strategist."},
+                            {"role": "user", "content": summary_prompt}
+                        ]
+                    )
+                    summary_text = response.choices[0].message.content
+                    source_insights += f"{summary_text}\n\n---\n\n"
                 except Exception as e:
-                    source_insights += f"TLDR: Error from OpenAI - {str(e)}\n\n"
+                    source_insights += f"TLDR: Error from OpenAI - {str(e)}\n\n---\n\n"
 
         st.subheader("Scraped URL Insights")
         st.text_area("Full Observations", value=source_insights, height=400)
