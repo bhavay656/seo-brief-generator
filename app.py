@@ -79,12 +79,26 @@ def fetch_google_urls(query, scraperapi_key, pages=1):
 
 
 def fetch_urls_with_fallback(query, scraperapi_key):
-    bing_links = fetch_bing_urls(query)
-    if len(bing_links) >= 3:
-        return bing_links
+    urls = fetch_bing_urls(query)
+    if len(urls) >= 3:
+        return urls
     else:
-        print("Bing results insufficient. Falling back to Google...")
-        return fetch_google_urls(query, scraperapi_key)
+        try:
+            google_url = f"https://www.google.com/search?q={query}"
+            headers = {"User-Agent": "Mozilla/5.0"}
+            r = requests.get(google_url, headers=headers, timeout=10)
+            soup = BeautifulSoup(r.text, "html.parser")
+            links = []
+            for a in soup.select("a"):
+                href = a.get("href")
+                if href and href.startswith("/url?q=http"):
+                    link = href.split("/url?q=")[1].split("&")[0]
+                    if link.startswith("http"):
+                        links.append(link)
+            return links[:10]
+        except Exception as e:
+            return []
+
 
 
 # ---- Scrape URLs ----
