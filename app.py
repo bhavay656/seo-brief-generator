@@ -200,27 +200,27 @@ if query and company_name and company_url:
                         "headings": page["headings"]
                     })
 
-    
-    st.markdown("### 🔍 SERP Insights (TLDR, Context, Unique Angle)")
-    for i in st.session_state["insights"]:
-        st.markdown(f"**URL:** [{i.get('url', 'N/A')}]({i.get('url', '#')})")
-        st.markdown(f"**Title:** {i.get('title', 'N/A')}")
-        st.markdown(f"**Meta Description:** {i.get('meta', 'N/A')}")
-        st.markdown("**Headings (as per document flow):**")
-        for h in i.get("headings", []):
-            indent = "  " if h.startswith("H4") else " " if h.startswith("H3") else ""
-            st.markdown(f"{indent}- {h}")
-        st.markdown(i.get("insight", "No insight generated."))
-        st.markdown("---")
 
+st.markdown("### 🔍 SERP Insights (TLDR, Context, Unique Angle)")
+for i in st.session_state["insights"]:
+    st.markdown(f"**URL:** [{i.get('url', 'N/A')}]({i.get('url', '#')})")
+    st.markdown(f"**Title:** {i.get('title', 'N/A')}")
+    st.markdown(f"**Meta Description:** {i.get('meta', 'N/A')}")
+    st.markdown("**Headings (as per document flow):**")
+    for h in i.get("headings", []):
+        indent = "  " if h.startswith("H4") else " " if h.startswith("H3") else ""
+        st.markdown(f"{indent}- {h}")
+    st.markdown(i.get("insight", "No insight generated."))
+    st.markdown("---")
 
-    sitemap_topics = parse_sitemap_topics(sitemap_url) if sitemap_url else []
+sitemap_topics = parse_sitemap_topics(sitemap_url) if sitemap_url else []
 
-    if st.button("✅ Generate SEO Brief"):
-        with st.spinner("Creating brief..."):
-            brief = generate_brief(scraped, query, company_name, company_url, sitemap_topics)
-            st.session_state["brief"] = brief
-    if "brief" in st.session_state:
+if st.button("✅ Generate SEO Brief"):
+    with st.spinner("Creating brief..."):
+        brief = generate_brief(scraped, query, company_name, company_url, sitemap_topics)
+        st.session_state["brief"] = brief
+
+if "brief" in st.session_state:
     st.subheader("📄 SEO Content Brief")
     st.markdown("✏️ *You can edit the brief before generating final content.*")
     brief_text = st.text_area("SEO Brief", st.session_state["brief"], height=600)
@@ -228,19 +228,18 @@ if query and company_name and company_url:
 
     # Extract SERP-matching outline from brief while enforcing clean, non-diluting format
     outline_lines = [
-        re.sub(r"[:\\-]", "", line).strip()
+        re.sub(r"[:\-]", "", line).strip()
         for line in brief_text.splitlines()
         if line.strip().startswith(("H1", "H2", "H3"))
     ]
     default_outline = "\n".join(outline_lines)
+
     st.markdown("## ✏️ Generate Content from Outline")
     st.markdown("*We’ve preserved the H1 and key structure from top SERPs. Feel free to edit, but avoid altering the search intent.*")
+    outline_input = st.text_area("Edit or approve outline", value=default_outline, height=300)
 
-        st.markdown("## ✏️ Generate Content from Outline")
-        outline_input = st.text_area("Edit or approve outline", value=default_outline, height=300)
-
-        if st.button("🚀 Generate Article"):
-            with st.spinner("Writing article..."):
-                article = generate_article(company_name, company_url, outline_input)
-            st.subheader("📝 Generated Article")
-            st.text_area("SEO Article", article, height=800)
+    if st.button("🚀 Generate Article"):
+        with st.spinner("Writing article..."):
+            article = generate_article(company_name, company_url, outline_input)
+        st.subheader("📝 Generated Article")
+        st.text_area("SEO Article", article, height=800)
