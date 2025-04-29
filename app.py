@@ -119,7 +119,7 @@ if st.button("Generate SEO Brief"):
         source_insights = ""
         for r in results:
             if 'error' not in r:
-                source_insights += f"Source URL: {r['url']}
+source_insights += f"Source URL: {r['url']}\n"
 Title: {r['title']}
 Meta: {r['meta']}
 Schemas: {', '.join(r['schemas']) or 'None'}
