@@ -3,3 +3,4 @@ openai>=1.2.4
 aiohttp
 beautifulsoup4
 requests
+graphviz
