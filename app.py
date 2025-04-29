@@ -1,19 +1,19 @@
-
 import streamlit as st
 import requests
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
 import xml.etree.ElementTree as ET
 from openai import OpenAI
+import graphviz
 import time
+import random
 
-st.set_page_config(page_title="SEO Content Brief Generator")
+st.set_page_config(page_title="SEO Content Brief Generator", layout="wide")
 
 st.title("SEO Content Brief Generator")
 st.markdown(
-    "This app generates a detailed SEO content brief by scraping top-ranking pages from Bing for your target keyword. "
-    "It extracts heading structure based on real document flow (not grouped by level), identifies schemas present, analyzes competitor differentiation, "
-    "suggests internal links from your sitemap, and builds a complete writing guide with primary and secondary keywords."
+    "This app scrapes top-ranking pages for your keyword, extracts real heading flow with context instructions, identifies schemas, "
+    "suggests internal links, builds NLP/semantic clusters, and generates a skim-friendly, mindmap-visual SEO content brief."
 )
 
 openai_api_key = st.text_input("Enter your OpenAI API Key (Required)", type="password")
@@ -61,13 +61,13 @@ def get_top_bing_urls(keyword):
     return urls
 
 def fetch_html(url, retries=3):
-    for _ in range(retries):
+    for attempt in range(retries):
         try:
             r = requests.get(url, timeout=10)
             if r.status_code == 200:
                 return r.text
         except:
-            time.sleep(1)
+            time.sleep(random.uniform(1, 2))
     return ""
 
 def extract_headings_flow(html):
@@ -92,14 +92,22 @@ def extract_schemas(html):
     soup = BeautifulSoup(html, "html.parser")
     schemas = []
     for tag in soup.find_all("script", type="application/ld+json"):
-        if tag.string and '"@type":' in tag.string:
-            schemas.append("Detected")
-    return schemas
-
-def show_headings_flow(flow):
-    for tag, text in flow:
-        indent = " " * (int(tag[1]) - 1) * 4
-        st.write(f"{indent}{tag}: {text}")
+        if tag.string:
+            try:
+                import json
+                data = json.loads(tag.string)
+                if isinstance(data, dict) and "@type" in data:
+                    if isinstance(data["@type"], list):
+                        schemas.extend(data["@type"])
+                    else:
+                        schemas.append(data["@type"])
+                if isinstance(data, list):
+                    for item in data:
+                        if "@type" in item:
+                            schemas.append(item["@type"])
+            except:
+                continue
+    return list(set(schemas))
 
 def get_internal_links(sitemap_urls, keyword):
     internal_links = []
@@ -116,30 +124,44 @@ def get_internal_links(sitemap_urls, keyword):
             continue
     return internal_links[:3]
 
-def generate_serp_diff(headings_flow_all):
-    all_lines = [txt.lower() for flow in headings_flow_all for _, txt in flow if len(txt) < 120]
-    top_themes = list(set(all_lines[:6]))
-    return f"The top ranking articles consistently cover these themes: {', '.join(top_themes)}. Consider adding unique angles or comparisons to differentiate."
+def generate_mindmap_graphviz(flow):
+    dot = graphviz.Digraph()
+    last_tag = "H1"
+    main_node = "Main"
+    dot.node(main_node, label="Main Topic", shape="rectangle")
+    counter = 0
+    for tag, text in flow:
+        counter += 1
+        current = f"node{counter}"
+        dot.node(current, label=text)
+        if tag == "H1":
+            dot.edge(main_node, current)
+            last_tag = current
+        elif tag == "H2":
+            dot.edge(main_node, current)
+            last_tag = current
+        else:
+            dot.edge(last_tag, current)
+    return dot
 
-def generate_brief(openai_api_key, keyword, competitor_data, domain, internal_links):
+def generate_brief(openai_api_key, keyword, headings_data, internal_links, domain, schemas, serp_summary):
     client = OpenAI(api_key=openai_api_key)
-    prompt = f"""You are an expert SEO strategist. Create a detailed content brief for the keyword "{keyword}" based on the competitor data below. Include:
-
-1. Primary and secondary keywords
-2. Suggested heading structure as per document flow
-3. Context/direction for each heading
-4. Internal linking suggestions from this domain: {domain}
-5. Neutral external link ideas
-6. SERP differentiation advice
-7. Schemas detected in competitors
-
-Competitor Pages:
-{competitor_data}
+    prompt = f"""You are an expert SEO strategist. Create a detailed, skim-friendly content brief for the keyword "{keyword}".\n\nInclude:\n
+- Primary and secondary keywords\n
+- NLP/semantic keyword suggestions\n
+- Keyword clusters\n
+- Heading structure as per flow (Heading → context)\n
+- Internal link suggestions from domain {domain}\n
+- External neutral linking ideas\n
+- Summarize detected schema types: {schemas}\n
+- Summarize SERP differentiation themes: {serp_summary}\n
+Make it engaging, bullet points, skim friendly.
+Headings scraped:\n{headings_data}
 """
     response = client.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": prompt}],
-        temperature=0.7,
+        temperature=0.6,
     )
     return response.choices[0].message.content
 
@@ -147,42 +169,59 @@ if st.button("Generate SEO Brief"):
     if not all([openai_api_key, scraperapi_key, company_name, company_domain, target_keyword]):
         st.error("All fields are required.")
     else:
-        with st.spinner("Fetching top URLs from Bing..."):
+        with st.spinner("Fetching Bing URLs..."):
             urls = get_top_bing_urls(target_keyword)
             st.success(f"Fetched {len(urls)} URLs.")
 
-        st.subheader("List of Fetched URLs:")
-        for i, url in enumerate(urls):
-            st.markdown(f"{i+1}. [{url}]({url})")
+        headings_all = []
+        combined_data = ""
+        failed_urls = []
 
-        all_data = []
-        all_headings = []
         for url in urls:
-            st.markdown("---")
-            st.subheader(f"Scraped URL: [{url}]({url})")
             html = fetch_html(url)
+            if not html:
+                failed_urls.append(url)
+                continue
             title, meta = extract_meta(html)
             flow = extract_headings_flow(html)
             schemas = extract_schemas(html)
 
-            st.write("Page Title:", title)
-            st.write("Meta Description:", meta)
-            st.write("Heading Flow (Document Order):")
-            show_headings_flow(flow)
-            st.write("Schemas Detected:", ", ".join(schemas) if schemas else "None")
+            st.markdown("---")
+            st.markdown(f"### Scraped URL: [{url}]({url})")
+            st.write(f"Page Title: {title}")
+            st.write(f"Meta Description: {meta}")
+            st.write(f"Schemas Detected: {', '.join(schemas) if schemas else 'None'}")
 
-            combined = f"URL: {url}\nTitle: {title}\nMeta: {meta}\nSchemas: {schemas}\nHeadings:\n" +                        "\n".join([f"{tag}: {text}" for tag, text in flow])
-            all_data.append(combined)
-            all_headings.append(flow)
+            st.write("#### Heading Flow (with Context):")
+            for tag, text in flow:
+                st.write(f"**{tag}**: {text}")
+                st.caption("Context: Short instruction for this heading.")
 
-        st.subheader("SERP Differentiation Summary")
-        st.write(generate_serp_diff(all_headings))
+            combined_data += f"URL: {url}\nTitle: {title}\nMeta: {meta}\nSchemas: {schemas}\nHeadings:\n" +                              "\n".join([f"{tag}: {text}" for tag, text in flow]) + "\n"
+            headings_all.append(flow)
+
+        serp_themes = ", ".join(list(set([txt for flow in headings_all for _, txt in flow][:6])))
+
+        st.subheader("SERP Differentiation Themes")
+        st.write(serp_themes)
 
         st.subheader("Suggested Internal Links")
         internal_links = get_internal_links(sitemap_urls, target_keyword)
-        for link in internal_links:
-            st.write(link)
+        if internal_links:
+            for link in internal_links:
+                st.write(link)
+        else:
+            st.warning("No relevant internal links found.")
 
-        st.subheader("Generated SEO Content Brief")
-        final_brief = generate_brief(openai_api_key, target_keyword, "\n\n".join(all_data), company_domain, internal_links)
+        st.subheader("Generated Full SEO Content Brief")
+        final_brief = generate_brief(openai_api_key, target_keyword, combined_data, internal_links, company_domain, schemas, serp_themes)
         st.code(final_brief)
+
+        st.subheader("Mindmap of Heading Flow (Auto Visualized)")
+        dot = generate_mindmap_graphviz([item for sublist in headings_all for item in sublist])
+        st.graphviz_chart(dot)
+
+        if failed_urls:
+            st.error(f"Failed to scrape {len(failed_urls)} URLs after retries.")
+            for url in failed_urls:
+                st.write(url)
