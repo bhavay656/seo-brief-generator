@@ -129,8 +129,7 @@ if st.button("Generate SEO Brief"):
         failed = []
         for res in results:
             if 'error' not in res:
-                source_insights += f"
-
+source_insights += f"Heading: {heading_text}\n"
 URL: {res['url']}
 Title: {res['title']}
 Meta: {res['meta']}
