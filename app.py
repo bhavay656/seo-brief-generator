@@ -46,37 +46,40 @@ query = keyword or topic
 
 # ---- Fetch SERP URLs ----
 def fetch_serp_urls(query, retries=3):
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.bing.com/",
+        "DNT": "1"
+    }
     query_encoded = quote(query)
     urls = []
 
-    # Try Bing first (direct)
+    # Helper: resolve redirect and filter Bing/Google junk
+    def resolve_and_clean(url):
+        try:
+            r = requests.get(url, headers=headers, timeout=10, allow_redirects=True)
+            if r.url and all(bad not in r.url for bad in ["bing.com", "google.com/search", "gclid=", "utm_"]):
+                return r.url
+        except:
+            return None
+        return None
+
+    # 1. Try Bing direct
     for attempt in range(retries):
         try:
             r = requests.get(f"https://www.bing.com/search?q={query_encoded}", headers=headers, timeout=10)
             soup = BeautifulSoup(r.text, "html.parser")
-
             raw_links = [a["href"] for a in soup.select("li.b_algo h2 a") if a.get("href")]
-            links = []
 
-            for raw_url in raw_links:
-                try:
-                    if raw_url.startswith("/ck/"):
-                        full_url = f"https://www.bing.com{raw_url}"
-                        redirected = requests.get(full_url, headers=headers, timeout=10, allow_redirects=True)
-                        links.append(redirected.url)
-                    elif raw_url.startswith("http"):
-                        links.append(raw_url)
-                except:
-                    continue
-
-            urls = list(dict.fromkeys(links))[:10]
+            resolved = [resolve_and_clean(f"https://www.bing.com{href}" if href.startswith("/ck/") else href) for href in raw_links]
+            urls = list(dict.fromkeys([u for u in resolved if u]))[:10]
             if urls:
                 return urls
         except:
             continue
 
-    # Fallback to Bing via ScraperAPI
+    # 2. Fallback to Bing via ScraperAPI
     for attempt in range(retries):
         try:
             r = requests.get(
@@ -84,14 +87,16 @@ def fetch_serp_urls(query, retries=3):
                 timeout=10
             )
             soup = BeautifulSoup(r.text, "html.parser")
-            links = [a["href"] for a in soup.select("li.b_algo h2 a") if a["href"].startswith("http")]
-            urls = list(dict.fromkeys(links))[:10]
+            raw_links = [a["href"] for a in soup.select("li.b_algo h2 a") if a.get("href")]
+
+            resolved = [resolve_and_clean(f"https://www.bing.com{href}" if href.startswith("/ck/") else href) for href in raw_links]
+            urls = list(dict.fromkeys([u for u in resolved if u]))[:10]
             if urls:
                 return urls
         except:
             continue
 
-    # Fallback to Google via ScraperAPI
+    # 3. Fallback to Google via ScraperAPI
     for attempt in range(retries):
         try:
             r = requests.get(
@@ -99,8 +104,10 @@ def fetch_serp_urls(query, retries=3):
                 timeout=10
             )
             soup = BeautifulSoup(r.text, "html.parser")
-            links = [a["href"] for a in soup.select("a") if a["href"].startswith("http") and "google" not in a["href"]]
-            urls = list(dict.fromkeys(links))[:10]
+            raw_links = [a["href"] for a in soup.select("a") if a.get("href") and a["href"].startswith("http") and "google" not in a["href"]]
+
+            resolved = [resolve_and_clean(link) for link in raw_links]
+            urls = list(dict.fromkeys([u for u in resolved if u]))[:10]
             if urls:
                 return urls
         except:
