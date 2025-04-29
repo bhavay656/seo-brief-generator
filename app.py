@@ -21,6 +21,14 @@ company_name = st.text_input("Company name")
 company_url = st.text_input("Website URL (for internal links)")
 sitemap_url = st.text_input("Sitemap.xml URL (for topic suggestions)")
 
+# Determine query from keyword or topic
+query = keyword.strip() if keyword.strip() else topic.strip()
+
+if not query:
+    st.warning("Please enter a target keyword or content topic to proceed.")
+    st.stop()
+
+
 if not keyword and not topic:
     st.warning("Please enter either a keyword or content topic.")
     st.stop()
