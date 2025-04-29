@@ -150,11 +150,19 @@ Unique Angle: ...
                 """.strip()
 
                 try:
-                    summary = openai.ChatCompletion.create(
-                        model="gpt-4",
-                        api_key=openai_api_key,
-                        messages=[{"role": "user", "content": summary_prompt}]
-                    )
+                    from openai import OpenAI
+
+client = OpenAI(api_key=openai_api_key)
+
+response = client.chat.completions.create(
+    model="gpt-4",
+    messages=[
+        {"role": "system", "content": "You are a top-tier SEO content strategist."},
+        {"role": "user", "content": summary_prompt}
+    ]
+)
+summary_text = response.choices[0].message.content
+
                     summary_text = summary.choices[0].message.content
                     source_insights += summary_text + "\n\n---\n\n"
                 except Exception as e:
