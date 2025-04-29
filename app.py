@@ -90,28 +90,42 @@ async def scrape_all(urls, scraperapi_key):
 # ------------------ Brief Generator ------------------ #
 def generate_brief(keyword, headings_all, sitemap_urls, company_name, company_url):
     prompt = f"""
-Act as a top-tier SEO content strategist.
+You are an expert SEO content strategist.
 
-Keyword: {keyword}
-Sitemap URLs: {sitemap_urls}
-Company: {company_name} | Website: {company_url}
+Input Keyword: "{keyword}"
+Company Name: "{company_name}"
+Company URL: "{company_url}"
+Sitemap URLs: "{sitemap_urls}"
 
-Here are the extracted heading structures from top SERP competitors:
+Below are SERP competitor details extracted (titles, meta descriptions, headings, schemas):
+
 {headings_all}
 
-Return the following:
-- Primary & Secondary Keywords
-- NLP/Semantic Suggestions
-- Keyword Clusters
-- Suggested Heading Structure (Document Flow)
-- Writer-focused Content Direction below each heading
-- Internal Link Ideas from the company's sitemap domain
-- External Link Ideas from trusted neutral domains
-- Schema Types Detected with interpretation
-- SERP Differentiation Ideas
-- Visual Mindmap summary as bullet points with sub-topics
+Return the final response in this exact format:
+1. For each URL: show
+   - URL
+   - Page Title
+   - Meta Description
+   - Heading Flow (document order)
+   - Schemas Detected
+   - Summary for Writer (what this page covers and unique angle)
+2. After all URLs, give:
+   - Primary & Secondary Keywords
+   - NLP/Semantic Keyword Suggestions
+   - Keyword Clusters (organized thematically)
+   - Suggested Heading Structure in document flow (H1 > H2 > H3)
+   - Under each heading: a short writer instruction
+   - Internal Linking Suggestions from sitemap domain
+   - External Neutral Linking Ideas
+   - Schema Types with explanation
+   - SERP Differentiation Suggestions
+   - Visual Mindmap (use text-based structure with bullets/sub-bullets, not Mermaid or code block)
 
-Use clear formatting and no markdown. Do not use emojis or unicode. Everything should be writer-ready and skim-friendly.
+Formatting Rules:
+- No markdown or emojis
+- Use white background visual style (no `st.code`, `st.markdown` with backticks)
+- All sections should be skim-friendly, use bullet lists and spacing
+- Each URL detail block must be clearly separated from brief
 """
     client = openai.OpenAI(api_key=openai_api_key)
     response = client.chat.completions.create(
