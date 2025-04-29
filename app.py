@@ -129,8 +129,6 @@ Write a clear, detailed, human-sounding article using the following outline:
 — Avoid exaggerated claims or AI language
 — {f'User feedback: ' + user_feedback if user_feedback else ''}
 """
-
-{outline_input}"
         try:
             res = client.chat.completions.create(
                 model="gpt-4",
