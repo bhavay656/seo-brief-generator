@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from openai import OpenAI
 import concurrent.futures
 import time
+import re
 
 client = OpenAI(api_key=st.secrets["openai_api_key"])
 scraperapi_key = st.secrets["scraperapi_key"]
@@ -37,21 +38,29 @@ def fetch_bing_urls(query):
     except:
         return []
 
-# --- ScraperAPI ---
-def scrape_with_scraperapi(url):
-    try:
-        full_url = f"http://api.scraperapi.com?api_key={scraperapi_key}&url={url}"
-        r = requests.get(full_url, timeout=20)
-        soup = BeautifulSoup(r.text, "html.parser")
-        title = soup.title.string.strip() if soup.title else ""
-        meta = soup.find("meta", attrs={"name": "description"})
-        meta_desc = meta["content"].strip() if meta and "content" in meta.attrs else ""
-        headings = []
-        for tag in soup.find_all(['h1', 'h2', 'h3', 'h4']):
-            headings.append(f"{tag.name.upper()}: {tag.get_text(strip=True)}")
-        return {"url": url, "title": title, "meta": meta_desc, "headings": headings}
-    except:
-        return None
+# --- ScraperAPI with Retry ---
+def scrape_with_scraperapi(url, retries=3):
+    attempt = 0
+    while attempt < retries:
+        try:
+            full_url = f"http://api.scraperapi.com?api_key={scraperapi_key}&url={url}"
+            r = requests.get(full_url, timeout=20)
+            soup = BeautifulSoup(r.text, "html.parser")
+            title = soup.title.string.strip() if soup.title else ""
+            meta = soup.find("meta", attrs={"name": "description"})
+            meta_desc = meta["content"].strip() if meta and "content" in meta.attrs else ""
+            headings = []
+            for tag in soup.find_all(['h1', 'h2', 'h3', 'h4']):
+                text = tag.get_text(strip=True)
+                if text:
+                    # Remove colons and hyphens from headings
+                    text = re.sub(r'[:\-]', '', text)
+                    headings.append(f"{tag.name.upper()}: {text}")
+            return {"url": url, "title": title, "meta": meta_desc, "headings": headings}
+        except:
+            attempt += 1
+            time.sleep(2)
+    return None
 
 def batch_scrape(urls):
     scraped_pages = []
@@ -185,6 +194,8 @@ if query and company_name and company_url:
                     insight = future.result()
                     st.session_state["insights"].append({
                         "url": page["url"],
+                        "title": page["title"],
+                        "meta": page["meta"],
                         "insight": insight,
                         "headings": page["headings"]
                     })
@@ -192,34 +203,8 @@ if query and company_name and company_url:
     st.markdown("### 🔍 SERP Insights (TLDR, Context, Unique Angle)")
     for i in st.session_state["insights"]:
         st.markdown(f"**URL:** [{i['url']}]({i['url']})")
+        st.markdown(f"**Title:** {i['title']}")
+        st.markdown(f"**Meta Description:** {i['meta']}")
         st.markdown("**Headings (as per document flow):**")
         for h in i['headings']:
-            indent = "  " if h.startswith("H4") else " " if h.startswith("H3") else ""
-            st.markdown(f"{indent}- {h}")
-        st.markdown(i['insight'])
-        st.markdown("---")
-
-    sitemap_topics = parse_sitemap_topics(sitemap_url) if sitemap_url else []
-
-    if st.button("✅ Generate SEO Brief"):
-        with st.spinner("Creating brief..."):
-            brief = generate_brief(scraped, query, company_name, company_url, sitemap_topics)
-            st.session_state["brief"] = brief
-
-    if "brief" in st.session_state:
-        st.subheader("📄 SEO Content Brief")
-        st.markdown("✏️ *You can edit the brief before generating final content.*")
-        brief_text = st.text_area("SEO Brief", st.session_state["brief"], height=600)
-        st.download_button("📥 Download Brief", brief_text, file_name=f"{query.replace(' ', '_')}_brief.txt")
-
-        # Extract outline
-        outline_lines = [line for line in brief_text.splitlines() if line.strip().startswith(("H1", "H2", "H3"))]
-        default_outline = "\n".join(outline_lines)
-        st.markdown("## ✏️ Generate Content from Outline")
-        outline_input = st.text_area("Edit or approve outline", value=default_outline, height=300)
-
-        if st.button("🚀 Generate Article"):
-            with st.spinner("Writing article..."):
-                article = generate_article(company_name, company_url, outline_input)
-            st.subheader("📝 Generated Article")
-            st.text_area("SEO Article", article, height=800)
+            indent = "  " if h.startswith("H4") else " " if
