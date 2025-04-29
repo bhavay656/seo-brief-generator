@@ -52,8 +52,8 @@ def scrape_with_scraperapi(url):
             if text:
                 headings.append(tag.name.upper() + " " + text)
         return {"url": url, "title": title, "meta": meta, "headings": headings}
-    except Exception as e:
-        return {"url": url, "title": "N/A", "meta": "N/A", "headings": [], "error": str(e)}
+    except:
+        return {"url": url, "title": "N/A", "meta": "N/A", "headings": []}
 
 def batch_scrape(urls):
     results = []
@@ -65,29 +65,20 @@ def batch_scrape(urls):
 
 def get_serp_insight(title, meta, headings, url):
     prompt = f"""
-You're an SEO content strategist.
+You're an SEO strategist.
 
 URL: {url}
 Title: {title}
 Meta: {meta}
 Headings: {headings}
 
-Give me the following in less than 100 words each:
-- TL;DR summary
+Write the following:
+- TLDR (1–2 lines)
 - Writer-friendly context
 - Unique angle (if any)
 
-Avoid using banned phrases (e.g., 'comprehensive', 'delve', 'landscape', 'holistic', etc.) and sound human.
+Avoid AI tones and banned words like: delve, holistic, comprehensive, synergy, etc.
 """
-
-    banned_words = ["delve", "landscape", "evolving", "context", "insight", "nuanced", "perspective",
-                    "paradigm", "comprehensive", "supercharge", "framework", "facet", "dynamic",
-                    "intricacies", "holistic", "iterative", "synergy", "confluence", "pivotal", "nuance",
-                    "robust", "transformative", "underpinning", "spectrum", "trajectory", "in-depth",
-                    "at the core of", "a myriad of", "on a broader scale", "in the context of", "from a holistic perspective",
-                    "taking into account", "a dynamic interplay", "evolving over time", "a comprehensive overview",
-                    "intricacies involved", "a pivotal role", "underpinning principles", "the spectrum of", "transformative impact"]
-
     try:
         response = client.chat.completions.create(
             model="gpt-4",
@@ -95,8 +86,8 @@ Avoid using banned phrases (e.g., 'comprehensive', 'delve', 'landscape', 'holist
             temperature=0.3
         )
         return response.choices[0].message.content.strip()
-    except Exception as e:
-        return "Error generating insight."
+    except:
+        return "No insight generated."
 
 def parse_sitemap_topics(sitemap_url):
     topics = []
@@ -112,19 +103,23 @@ def parse_sitemap_topics(sitemap_url):
 
 def generate_brief(scraped, query, company_name, company_url, sitemap_topics):
     prompt = f"""
-Act as a senior SEO content strategist.
+Act as an SEO strategist.
 
-You’ve reviewed these competitor pages:
+Review these pages:
 {scraped}
 
-Based on the heading structures, generate an SEO content brief for the topic: "{query}".
+Write a detailed SEO brief for the topic: "{query}". Follow search intent. Add context under each heading.
 
-Use heading tags (H1, H2, H3). Keep H1 identical to the SERP intent. Do not use colons or dashes in any heading. Do not use AI-sounding or banned phrases. Add unique angle for each section wherever possible. Suggest internal linking topics using these:
-{sitemap_topics if sitemap_topics else "User has not provided sitemap."}
+Only 1 H2 or H3 after halfway can contain brand name.
 
-Do not include external references.
+Include:
+- H1–H3 structure
+- Context under each heading
+- Internal links only if sitemap provided
+- No external links
+- Avoid banned phrases (delve, holistic, etc.)
 
-End with a human-style note for writers.
+Tone: Clear, human, informative.
 """
     try:
         response = client.chat.completions.create(
@@ -133,22 +128,21 @@ End with a human-style note for writers.
             temperature=0.3
         )
         return response.choices[0].message.content.strip()
-    except Exception as e:
+    except:
         return "Brief generation failed."
 
 def generate_article(company_name, company_url, outline, user_feedback=None):
     prompt = f"""
-You’re a SaaS content writer for the company {company_name} ({company_url}).
+You're a professional SEO writer at {company_name} ({company_url}).
 
-Write a detailed SEO article based on this outline:
+Write a detailed article from this outline:
 {outline}
 
-Rules:
-- Avoid banned phrases: no 'delve', 'comprehensive', 'landscape', etc.
-- Word count must be at least 1800 words unless search intent is shallow.
-- Use natural tone, don’t exaggerate.
-- Use semantic SEO terms around the main topic.
-- Mention primary & secondary keywords naturally.
+- Match SERP title (H1) to search intent
+- Word count: minimum 1800
+- Tone: Clean, natural, human
+- Embed primary/secondary keywords and NLP terms
+- Avoid banned phrases
 
 {"User feedback: " + user_feedback if user_feedback else ""}
 """
@@ -156,14 +150,14 @@ Rules:
         response = client.chat.completions.create(
             model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.5
+            temperature=0.4
         )
         return response.choices[0].message.content.strip()
-    except Exception as e:
+    except:
         return "Article generation failed."
 
-# --- STREAMLIT MAIN FLOW ---
 
+# ---------- Streamlit Flow ------------
 st.subheader("🔍 SERP Insights (TLDR, Context, Unique Angle)")
 
 urls = fetch_bing_urls(query)
@@ -202,13 +196,9 @@ if "brief" in st.session_state:
     brief_text = st.text_area("SEO Brief", st.session_state["brief"], height=600)
     st.download_button("📥 Download Brief", brief_text, file_name=f"{query.replace(' ', '_')}_brief.txt")
 
-    # Clean heading structure
-    outline_lines = [
-        re.sub(r"[:\-]", "", line).strip()
-        for line in brief_text.splitlines()
-        if line.strip().startswith(("H1", "H2", "H3"))
-    ]
-    default_outline = "\n".join(outline_lines)
+    outline_lines = [re.sub(r"[:\-]", "", line).strip() for line in brief_text.splitlines() if line.strip().startswith(("H1", "H2", "H3"))]
+    default_outline = "
+".join(outline_lines)
     st.markdown("## ✏️ Generate Content from Outline")
     st.markdown("*We've preserved the H1 and key structure from top SERPs. Feel free to edit, but avoid altering the search intent.*")
     outline_input = st.text_area("Edit or approve outline", value=default_outline, height=300)
@@ -220,11 +210,11 @@ if "brief" in st.session_state:
 
 if "article" in st.session_state:
     st.subheader("📝 Generated Article")
-    article = st.session_state["article"]
-    st.text_area("SEO Article", article, height=800)
-    st.download_button("📥 Download Article", article, file_name=f"{query.replace(' ', '_')}_article.txt")
-    feedback = st.text_area("Want to improve the article? Describe what you'd like to change.")
+    st.text_area("SEO Article", st.session_state["article"], height=800)
+    st.download_button("📥 Download Article", st.session_state["article"], file_name=f"{query.replace(' ', '_')}_article.txt")
+    
+    feedback = st.text_area("Suggest edits to improve the article below. You can give feedback multiple times.", key="feedback")
     if st.button("🔄 Improve Article Based on Feedback"):
-        with st.spinner("Regenerating..."):
-            updated = generate_article(company_name, company_url, outline_input, feedback)
-            st.session_state["article"] = updated
+        with st.spinner("Improving article..."):
+            improved = generate_article(company_name, company_url, outline_input, user_feedback=feedback)
+            st.session_state["article"] = improved
