@@ -1,115 +1,130 @@
 import streamlit as st
-import requests
-import aiohttp
 import asyncio
+import aiohttp
+import time
 import openai
+import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 import graphviz
-import time
 
+# Page setup
 st.set_page_config(page_title="SEO Content Brief Generator", layout="wide")
-
-# ------------------ INPUTS ------------------ #
 st.title("SEO Content Brief Generator")
 st.caption("Generate detailed SEO briefs based on real SERPs, heading flows, schemas, and keyword clustering.")
 
+# Inputs
 openai_api_key = st.text_input("Enter your OpenAI API Key", type="password")
 scraperapi_key = st.text_input("Enter your ScraperAPI Key", type="password")
 company_name = st.text_input("Enter your Company Name")
-company_url = st.text_input("Enter your Company Website URL (e.g., yourwebsite.com)")
+company_url = st.text_input("Enter your Company Website URL (e.g., yourcompany.com)")
 sitemap_urls = st.text_input("Enter one or multiple Sitemap URLs (comma-separated)")
 keyword = st.text_input("Enter the Target Keyword")
 
-# ------------------ FUNCTIONS ------------------ #
-
+# Functions
 def fetch_bing_urls(keyword):
     query = '+'.join(keyword.split())
-    url = f"https://www.bing.com/search?q={query}&count=30"
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-    response = requests.get(url, headers=headers)
-    soup = BeautifulSoup(response.content, "html.parser")
+    url = f"https://www.bing.com/search?q={query}&count=50"
+    headers = {"User-Agent": "Mozilla/5.0"}
     links = []
-    for a_tag in soup.select("li.b_algo h2 a"):
-        href = a_tag.get('href')
-        if href and 'bing.com' not in href and 'microsoft.com' not in href:
-            links.append(href)
+    try:
+        response = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(response.content, "html.parser")
+        for a_tag in soup.select("li.b_algo h2 a"):
+            href = a_tag.get('href')
+            if href and 'bing.com' not in href and 'microsoft.com' not in href:
+                links.append(href)
+    except:
+        pass
     unique_links = {}
     for link in links:
         domain = urlparse(link).netloc
         if domain not in unique_links:
             unique_links[domain] = link
-    return list(unique_links.values())[:10]
+    return list(unique_links.values())[:15]
 
-async def scrape_url(session, url, scraperapi_key, retries=3):
-    attempt = 0
-    while attempt < retries:
-        try:
-            params = "&render=true&country_code=us&device_type=desktop&keep_headers=true&wait_until=domcontentloaded"
-            api_url = f"http://api.scraperapi.com/?api_key={scraperapi_key}&url={url}{params}"
-            async with session.get(api_url, timeout=25) as resp:
-                html = await resp.text()
-                if "scraperapi" in html.lower() or "Access Denied" in html:
-                    raise Exception("Blocked/Access Denied")
-                soup = BeautifulSoup(html, 'html.parser')
-                title = soup.title.string.strip() if soup.title else "N/A"
-                meta_desc = ""
-                for tag in soup.find_all("meta"):
-                    if tag.get("name") == "description" or tag.get("property") == "og:description":
-                        meta_desc = tag.get("content")
-                        break
-                headings = []
-                for tag in soup.find_all(["h1", "h2", "h3", "h4"]):
-                    headings.append(f"{tag.name.upper()}: {tag.get_text(strip=True)}")
-                schemas = []
-                if 'FAQPage' in html:
-                    schemas.append('FAQPage')
-                if 'WebPage' in html:
-                    schemas.append('WebPage')
-                return {"url": url, "title": title, "meta": meta_desc, "headings": headings, "schemas": schemas}
-        except Exception as e:
-            attempt += 1
-            await asyncio.sleep(2)
-    return {"url": url, "error": "Failed after retries"}
+async def scrape_batch(session, urls, scraperapi_key):
+    results = []
+    for url in urls:
+        attempt = 0
+        while attempt < 3:
+            try:
+                api_url = f"http://api.scraperapi.com/?api_key={scraperapi_key}&url={url}&render=true"
+                async with session.get(api_url, timeout=40) as resp:
+                    html = await resp.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+                    title = soup.title.string.strip() if soup.title else "N/A"
+                    meta_desc = ""
+                    for tag in soup.find_all("meta"):
+                        if tag.get("name") == "description" or tag.get("property") == "og:description":
+                            meta_desc = tag.get("content")
+                            break
+                    headings = []
+                    for tag in soup.find_all(["h1", "h2", "h3", "h4"]):
+                        headings.append(f"{tag.name.upper()}: {tag.get_text(strip=True)}")
+                    schemas = []
+                    if 'FAQPage' in html:
+                        schemas.append('FAQPage')
+                    if 'WebPage' in html:
+                        schemas.append('WebPage')
+                    results.append({"url": url, "title": title, "meta": meta_desc, "headings": headings, "schemas": schemas})
+                    break
+            except:
+                attempt += 1
+                await asyncio.sleep(2)
+        else:
+            results.append({"url": url, "error": "Failed after retries"})
+    return results
 
 async def scrape_all(urls, scraperapi_key):
     results = []
     async with aiohttp.ClientSession() as session:
-        tasks = [scrape_url(session, url, scraperapi_key) for url in urls]
-        results = await asyncio.gather(*tasks)
+        batches = [urls[i:i+3] for i in range(0, len(urls), 3)]
+        for batch in batches:
+            batch_results = await scrape_batch(session, batch, scraperapi_key)
+            results.extend(batch_results)
+            time.sleep(2)
     return results
 
-def generate_brief(keyword, headings_all, sitemap_urls, company_name, company_url):
+def generate_brief(openai_api_key, keyword, headings_all, sitemap_urls, company_name, company_url):
     prompt = f"""
 You are an expert SEO content strategist.
-Topic: {keyword}
-Company: {company_name} ({company_url})
-Competitor Headings:
+Given the keyword: {keyword}
+Given the headings from competitors:
 {headings_all}
 
-Instructions:
-- Primary and secondary keywords
-- NLP/Semantic keyword ideas
+Create a highly detailed SEO content brief including:
+- Primary keyword and secondary keywords
+- NLP/semantic keyword suggestions
 - Keyword clusters
-- Suggested heading structure based on flow
-- Content directions
-- Internal linking ideas from sitemap: {sitemap_urls}
+- Heading structure (document flow)
+- Content directions under each heading
+- Internal linking ideas from sitemap URLs: {sitemap_urls} for company {company_name} ({company_url})
 - External neutral linking ideas
 - Schema types detected
-- SERP differentiation points
-- Output a full SEO brief in clean readable format.
-Do NOT add emojis.
+- SERP differentiation themes
+Format it cleanly, simple white background readable.
+No emojis, no unicode artifacts. Keep it mature, business tone.
 """
-    response = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[{"role": "user", "content": prompt}],
-        api_key=openai_api_key
+    headers = {
+        "Authorization": f"Bearer {openai_api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": "gpt-4",
+        "messages": [{"role": "user", "content": prompt}],
+    }
+    response = requests.post(
+        "https://api.openai.com/v1/chat/completions",
+        headers=headers,
+        json=payload
     )
-    return response['choices'][0]['message']['content']
+    return response.json()["choices"][0]["message"]["content"]
 
 def draw_mindmap(headings):
     dot = graphviz.Digraph()
     last_h2 = None
+    last_h3 = None
     for head in headings:
         if head.startswith("H1"):
             dot.node(head, head)
@@ -118,26 +133,31 @@ def draw_mindmap(headings):
             dot.node(head, head)
             dot.edge("H1" if "H1" in dot.source else list(dot.body)[0], head)
         elif head.startswith("H3") and last_h2:
+            last_h3 = head
             dot.node(head, head)
             dot.edge(last_h2, head)
+        elif head.startswith("H4") and last_h3:
+            dot.node(head, head)
+            dot.edge(last_h3, head)
     return dot
 
-# ------------------ APP LOGIC ------------------ #
-
+# Main app logic
 if st.button("Generate SEO Brief"):
     if openai_api_key and scraperapi_key and company_url and keyword:
-        with st.spinner('Fetching Top 10 Organic URLs from Bing...'):
+        with st.spinner("Fetching Top 10 Organic URLs from Bing..."):
             fetched_urls = fetch_bing_urls(keyword)
-            if len(fetched_urls) < 5:
-                st.error("Failed to fetch minimum 5 organic URLs. Try again.")
-                st.stop()
-            st.success(f"Fetched {len(fetched_urls)} URLs.")
-            for i, link in enumerate(fetched_urls):
-                st.markdown(f"{i+1}. [{link}]({link})")
-
-        with st.spinner('Scraping URLs content...'):
-            results = asyncio.run(scrape_all(fetched_urls, scraperapi_key))
-
+        
+        if len(fetched_urls) < 5:
+            st.error("Failed to fetch minimum 5 organic URLs. Try again.")
+            st.stop()
+        
+        st.success(f"Fetched {len(fetched_urls)} URLs.")
+        for idx, link in enumerate(fetched_urls):
+            st.markdown(f"{idx+1}. [{link}]({link})")
+        
+        with st.spinner("Scraping URLs content..."):
+            results = asyncio.run(scrape_all(fetched_urls[:10], scraperapi_key))
+        
         headings_all = ""
         failed_urls = []
         for res in results:
@@ -147,21 +167,21 @@ if st.button("Generate SEO Brief"):
                     headings_all += f"{head}\n"
             else:
                 failed_urls.append(res['url'])
-
-        with st.spinner('Generating Full SEO Brief using OpenAI...'):
-            full_brief = generate_brief(keyword, headings_all, sitemap_urls, company_name, company_url)
-
-        st.header("Generated Full SEO Content Brief")
+        
+        with st.spinner("Generating Full SEO Brief using OpenAI..."):
+            full_brief = generate_brief(openai_api_key, keyword, headings_all, sitemap_urls, company_name, company_url)
+        
+        st.subheader("Generated Full SEO Content Brief")
         st.markdown(full_brief)
-
+        
         if failed_urls:
             st.error(f"Failed to scrape {len(failed_urls)} URLs after retries.")
             for link in failed_urls:
                 st.markdown(f"- [{link}]({link})")
 
-        with st.spinner("Generating Mindmap of Heading Structure..."):
-            mindmap = draw_mindmap([head for res in results if 'headings' in res for head in res['headings']])
-            st.graphviz_chart(mindmap)
-
+        st.subheader("Mindmap of Heading Structure (Auto Visualized)")
+        mindmap = draw_mindmap([head for res in results if 'headings' in res for head in res['headings']])
+        st.graphviz_chart(mindmap)
+        
     else:
-        st.error("Please fill all required fields!")
+        st.error("Please fill all the required fields carefully.")
