@@ -197,8 +197,7 @@ if "brief" in st.session_state:
     st.download_button("📥 Download Brief", brief_text, file_name=f"{query.replace(' ', '_')}_brief.txt")
 
     outline_lines = [re.sub(r"[:\-]", "", line).strip() for line in brief_text.splitlines() if line.strip().startswith(("H1", "H2", "H3"))]
-    default_outline = "
-".join(outline_lines)
+default_outline = "\n".join(outline_lines)
     st.markdown("## ✏️ Generate Content from Outline")
     st.markdown("*We've preserved the H1 and key structure from top SERPs. Feel free to edit, but avoid altering the search intent.*")
     outline_input = st.text_area("Edit or approve outline", value=default_outline, height=300)
