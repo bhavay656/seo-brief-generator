@@ -117,7 +117,8 @@ if st.button("Generate SEO Brief"):
             results = asyncio.run(scrape_all(urls, scraperapi_key))
 
         source_insights = ""
-                for r in results:
+
+        for r in results:
             if 'error' not in r:
                 source_insights += (
                     f"Source URL: {r['url']}\n"
@@ -129,32 +130,41 @@ if st.button("Generate SEO Brief"):
                 for h in r['headings']:
                     source_insights += f"- {h}\n"
 
-                # Call OpenAI to summarize page insights
+                # Call OpenAI to interpret this page
                 summary_prompt = f"""
-You are an expert SEO analyst. A page has the following structure:
+You are an expert SEO content strategist.
+
+Given the following data from a web page, provide:
+1. TLDR (1-line summary of the page's goal)
+2. Context for Writer (what this page is trying to cover based on its headings)
+3. Unique Angle (what stands out or differs compared to other similar pages)
 
 Title: {r['title']}
-Meta Description: {r['meta']}
-Headings: {' | '.join(r['headings'])}
+Meta: {r['meta']}
+Headings: {" | ".join(r['headings'])}
 
-Please provide:
-1. TLDR (1 line summary of page goal)
-2. Context for Writer (what this page is trying to cover)
-3. Unique Angle (how it differs or adds something compared to others)
-
-Return in this format:
+Respond in this format:
 TLDR: ...
 Context for Writer: ...
 Unique Angle: ...
-"""
+                """.strip()
+
                 try:
                     summary = openai.ChatCompletion.create(
                         model="gpt-4",
-                        messages=[{"role": "user", "content": summary_prompt}],
-                        api_key=openai_api_key
+                        api_key=openai_api_key,
+                        messages=[{"role": "user", "content": summary_prompt}]
                     )
-                    ai_content = summary['choices'][0]['message']['content']
+                    summary_text = summary.choices[0].message.content
+                    source_insights += summary_text + "\n\n---\n\n"
                 except Exception as e:
-                    ai_content = f"(OpenAI error: {str(e)})"
+                    source_insights += f"TLDR: Error from OpenAI - {str(e)}\n\n"
 
-                source_insights += f"{ai_content}\n\n---\n\n"
+        st.subheader("Scraped URL Insights")
+        st.text_area("Full Observations", value=source_insights, height=400)
+
+        with st.spinner("Generating Final SEO Brief..."):
+            full_brief = generate_brief(keyword, source_insights, sitemap_urls, company_name, company_url)
+
+        st.subheader("Generated Full SEO Content Brief")
+        st.text_area("SEO Content Brief", full_brief, height=800)
