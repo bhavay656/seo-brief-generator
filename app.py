@@ -119,16 +119,17 @@ if st.button("Generate SEO Brief"):
         source_insights = ""
         for r in results:
             if 'error' not in r:
-source_insights += f"Source URL: {r['url']}\n"
-Title: {r['title']}
-Meta: {r['meta']}
-Schemas: {', '.join(r['schemas']) or 'None'}
-"
-                for h in r['headings']:
-                    source_insights += f"- {h}
-"
-                source_insights += "
-"
+source_insights += (
+    f"\nSource URL: {r['url']}\n"
+    f"Title: {r['title']}\n"
+    f"Meta: {r['meta']}\n"
+    f"Schemas Detected: {', '.join(r['schemas']) if r['schemas'] else 'None'}\n"
+    f"Headings Observed:\n"
+)
+for h in r['headings']:
+    source_insights += f"- {h}\n"
+source_insights += "\n"
+
 
         st.subheader("Scraped URL Insights")
         st.text_area("Full Observations", value=source_insights, height=400)
