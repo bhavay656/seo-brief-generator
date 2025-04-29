@@ -50,39 +50,56 @@ def fetch_serp_urls(query, retries=3):
     query_encoded = quote(query)
     urls = []
 
-    # Try Bing first
+    # Try Bing first (direct)
     for attempt in range(retries):
         try:
             r = requests.get(f"https://www.bing.com/search?q={query_encoded}", headers=headers, timeout=10)
             soup = BeautifulSoup(r.text, "html.parser")
-            links = [a["href"] for a in soup.select("li.b_algo h2 a") if a["href"].startswith("http")]
-            links = [resolve_redirected_url(link) for link in links]
-            urls = links[:10]
+
+            raw_links = [a["href"] for a in soup.select("li.b_algo h2 a") if a.get("href")]
+            links = []
+
+            for raw_url in raw_links:
+                try:
+                    if raw_url.startswith("/ck/"):
+                        full_url = f"https://www.bing.com{raw_url}"
+                        redirected = requests.get(full_url, headers=headers, timeout=10, allow_redirects=True)
+                        links.append(redirected.url)
+                    elif raw_url.startswith("http"):
+                        links.append(raw_url)
+                except:
+                    continue
+
+            urls = list(dict.fromkeys(links))[:10]
             if urls:
                 return urls
         except:
             continue
 
-    # Fallback to Bing with ScraperAPI
+    # Fallback to Bing via ScraperAPI
     for attempt in range(retries):
         try:
-            r = requests.get(f"http://api.scraperapi.com?api_key={scraperapi_key}&url=https://www.bing.com/search?q={query_encoded}", timeout=10)
+            r = requests.get(
+                f"http://api.scraperapi.com?api_key={scraperapi_key}&url=https://www.bing.com/search?q={query_encoded}",
+                timeout=10
+            )
             soup = BeautifulSoup(r.text, "html.parser")
             links = [a["href"] for a in soup.select("li.b_algo h2 a") if a["href"].startswith("http")]
-            links = [resolve_redirected_url(link) for link in links]
-            urls = links[:10]
+            urls = list(dict.fromkeys(links))[:10]
             if urls:
                 return urls
         except:
             continue
 
-    # Fallback to Google with ScraperAPI
+    # Fallback to Google via ScraperAPI
     for attempt in range(retries):
         try:
-            r = requests.get(f"http://api.scraperapi.com?api_key={scraperapi_key}&url=https://www.google.com/search?q={query_encoded}", timeout=10)
+            r = requests.get(
+                f"http://api.scraperapi.com?api_key={scraperapi_key}&url=https://www.google.com/search?q={query_encoded}",
+                timeout=10
+            )
             soup = BeautifulSoup(r.text, "html.parser")
             links = [a["href"] for a in soup.select("a") if a["href"].startswith("http") and "google" not in a["href"]]
-            links = [resolve_redirected_url(link) for link in links]
             urls = list(dict.fromkeys(links))[:10]
             if urls:
                 return urls
