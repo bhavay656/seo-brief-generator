@@ -5,9 +5,7 @@ import asyncio
 import openai
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
-from collections import defaultdict
 import time
-import graphviz
 
 st.set_page_config(page_title="SEO Content Brief Generator", layout="wide")
 
@@ -21,7 +19,6 @@ company_url = st.text_input("Enter your Company Website URL (e.g., yourcompany.c
 sitemap_urls = st.text_input("Enter one or multiple Sitemap URLs (comma-separated)")
 keyword = st.text_input("Enter the Target Keyword")
 
-# ------------------ URL Fetcher ------------------ #
 def fetch_bing_urls(keyword):
     headers = {"User-Agent": "Mozilla/5.0"}
     urls = []
@@ -44,7 +41,6 @@ def fetch_bing_urls(keyword):
             time.sleep(2)
     return urls[:10]
 
-# ------------------ Async Scraper ------------------ #
 async def scrape_url(session, url, scraperapi_key, fallback=False):
     try:
         final_url = f"http://api.scraperapi.com/?api_key={scraperapi_key}&url={url}&render=true" if fallback else url
@@ -87,45 +83,32 @@ async def scrape_all(urls, scraperapi_key):
             time.sleep(2)
     return results
 
-# ------------------ Brief Generator ------------------ #
 def generate_brief(keyword, headings_all, sitemap_urls, company_name, company_url):
     prompt = f"""
-You are an expert SEO content strategist.
+Act as an expert SEO content strategist.
 
-Input Keyword: "{keyword}"
-Company Name: "{company_name}"
-Company URL: "{company_url}"
-Sitemap URLs: "{sitemap_urls}"
+Keyword: {keyword}
+Sitemap URLs: {sitemap_urls}
+Company: {company_name} | Website: {company_url}
 
-Below are SERP competitor details extracted (titles, meta descriptions, headings, schemas):
-
+Here are heading structures, meta info, schemas, and summaries from real SERP articles:
 {headings_all}
 
-Return the final response in this exact format:
-1. For each URL: show
-   - URL
-   - Page Title
-   - Meta Description
-   - Heading Flow (document order)
-   - Schemas Detected
-   - Summary for Writer (what this page covers and unique angle)
-2. After all URLs, give:
-   - Primary & Secondary Keywords
-   - NLP/Semantic Keyword Suggestions
-   - Keyword Clusters (organized thematically)
-   - Suggested Heading Structure in document flow (H1 > H2 > H3)
-   - Under each heading: a short writer instruction
-   - Internal Linking Suggestions from sitemap domain
-   - External Neutral Linking Ideas
-   - Schema Types with explanation
-   - SERP Differentiation Suggestions
-   - Visual Mindmap (use text-based structure with bullets/sub-bullets, not Mermaid or code block)
+Generate a full SEO content brief that includes:
+- Primary & Secondary Keywords
+- NLP/Semantic Suggestions
+- Keyword Clusters
+- Clean Heading Structure (H1-H4s)
+- Content direction under each heading with examples
+- Unique angles covered by SERPs
+- TL;DRs and content depth indicators
+- Internal Linking Ideas (from company domain)
+- External Link Suggestions
+- Schema Types Detected with interpretation
+- SERP Differentiation Themes
+- Bullet-style Visual Mindmap (structured list)
 
-Formatting Rules:
-- No markdown or emojis
-- Use white background visual style (no `st.code`, `st.markdown` with backticks)
-- All sections should be skim-friendly, use bullet lists and spacing
-- Each URL detail block must be clearly separated from brief
+Format cleanly, skim-friendly for content writers. Do not include markdown. Avoid generic placeholders.
 """
     client = openai.OpenAI(api_key=openai_api_key)
     response = client.chat.completions.create(
@@ -134,7 +117,6 @@ Formatting Rules:
     )
     return response.choices[0].message.content
 
-# ------------------ App Logic ------------------ #
 if st.button("Generate SEO Brief"):
     if openai_api_key and scraperapi_key and company_url and keyword:
         with st.spinner("Fetching Top 10 Organic URLs from Bing..."):
@@ -150,25 +132,32 @@ if st.button("Generate SEO Brief"):
             results = asyncio.run(scrape_all(bing_urls, scraperapi_key))
 
         headings_all = ""
-        failed = []
+        st.subheader("Scraped SERP Summary Before Brief")
         for res in results:
             if 'error' not in res:
-                headings_all += f"\nURL: {res['url']}\nTitle: {res['title']}\nMeta: {res['meta']}\nSchemas: {', '.join(res['schemas'])}\n"
+                st.markdown(f"### [{res['title']}]({res['url']})")
+                st.write(f"**Meta:** {res['meta']}")
+                st.write(f"**Schemas Detected:** {', '.join(res['schemas']) if res['schemas'] else 'None'}")
+
                 for h in res['headings']:
-                    headings_all += f"- {h}\n"
+                    heading_text = h.split(": ", 1)[-1]
+                    context_prompt = f"What should a writer cover under this heading in an article about '{keyword}'?
+Heading: {heading_text}"
+                    context = openai.ChatCompletion.create(
+                        model="gpt-4",
+                        messages=[{"role": "user", "content": context_prompt}],
+                        api_key=openai_api_key
+                    ).choices[0].message.content.strip()
+                    st.write(f"- {h}\n   → {context}")
+                    headings_all += f"{h}\n→ {context}\n"
                 headings_all += "\n"
             else:
-                failed.append(res['url'])
+                st.warning(f"Failed to scrape {res['url']}")
 
         with st.spinner("Generating Brief using OpenAI..."):
             full_brief = generate_brief(keyword, headings_all, sitemap_urls, company_name, company_url)
 
         st.subheader("Generated Full SEO Content Brief")
         st.markdown(full_brief)
-
-        if failed:
-            st.error("Some URLs failed:")
-            for url in failed:
-                st.markdown(f"- {url}")
     else:
         st.error("Please fill all required fields!")
