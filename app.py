@@ -149,7 +149,7 @@ Write a clear, detailed, human-sounding article using the following outline:
 - Minimum word count: 1800
 - Tone: Clean, natural, human
 - Embed primary/secondary keywords and NLP terms
-- Avoid exaggerated claims or AI-generated language
+- Avoid exaggerated claims or AI generated language
 - User feedback: {user_feedback}
 """
     else:
@@ -163,7 +163,7 @@ Write a clear, detailed, human-sounding article using the following outline:
 - Minimum word count: 1800
 - Tone: Clean, natural, human
 - Embed primary/secondary keywords and NLP terms
-- Avoid exaggerated claims or AI-generated language
+- Avoid exaggerated claims or AI generated language
 """
 
     try:
