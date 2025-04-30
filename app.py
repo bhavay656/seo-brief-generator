@@ -139,7 +139,7 @@ outline_input = st.text_area("Edit or approve outline", value=default_outline, h
 # Article Generation Function
 def generate_article(company_name, company_url, outline_input, user_feedback=None):
     if user_feedback:
-    prompt = f"""You are an SEO writer for {company_name} ({company_url}).
+        prompt = f"""You are an SEO writer for {company_name} ({company_url}).
 
 Write a clear, detailed, human-sounding article using the following outline:
 
@@ -149,11 +149,11 @@ Write a clear, detailed, human-sounding article using the following outline:
 - Minimum word count: 1800
 - Tone: Clean, natural, human
 - Embed primary/secondary keywords and NLP terms
-- Avoid exaggerated claims or AI generated language
+- Avoid exaggerated claims or AI-generated language
 - User feedback: {user_feedback}
 """
-else:
-    prompt = f"""You are an SEO writer for {company_name} ({company_url}).
+    else:
+        prompt = f"""You are an SEO writer for {company_name} ({company_url}).
 
 Write a clear, detailed, human-sounding article using the following outline:
 
@@ -165,6 +165,7 @@ Write a clear, detailed, human-sounding article using the following outline:
 - Embed primary/secondary keywords and NLP terms
 - Avoid exaggerated claims or AI-generated language
 """
+
     try:
         res = client.chat.completions.create(
             model="gpt-4",
