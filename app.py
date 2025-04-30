@@ -120,15 +120,14 @@ def generate_brief(pages, query, company_name, company_url, sitemap_topics):
     extracted = ""
     for p in pages:
         context = get_serp_insight(p)
-        extracted += f"URL: {p['url']}
+        extracted += f"""URL: {p['url']}
 Title: {p['title']}
 Meta: {p['meta']}
 Headings:
 {chr(10).join(p['headings'])}
 Context: {context}
 ---
-"
-
+"""
     internal_topic_line = f"Internal linking topics: {', '.join(sitemap_topics)}." if sitemap_topics else ""
 
     prompt = f"""You are an expert SEO strategist.
