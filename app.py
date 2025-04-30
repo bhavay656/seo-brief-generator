@@ -176,15 +176,17 @@ Outline:
     )
     return res.choices[0].message.content.strip()
 
-# --- Workflow Execution ---
+# --- Execution ---
 if query and company_name and company_url:
     if "urls" not in st.session_state:
         scraped_urls = fetch_bing_urls(query)
+        if scraped_urls:
+            st.info("✅ SERP scraping succeeded. Optionally add more URLs below to enrich the brief.")
         if manual_urls:
             manual_list = [url.strip() for url in manual_urls.split(",") if url.strip()]
             scraped_urls += manual_list
         if not scraped_urls:
-            st.warning("No URLs were scraped. Please enter reference URLs manually above.")
+            st.warning("⚠️ No URLs were successfully scraped. Please enter references manually.")
             st.stop()
         st.session_state["urls"] = list(dict.fromkeys(scraped_urls))
 
@@ -193,16 +195,15 @@ if query and company_name and company_url:
         st.markdown(f"- [{u}]({u})")
 
     if "scraped" not in st.session_state:
-        with st.spinner("Scraping pages in parallel..."):
+        with st.spinner("🔍 Scraping all pages in parallel..."):
             st.session_state["scraped"] = batch_scrape(st.session_state["urls"])
 
     scraped = st.session_state["scraped"]
-
     sitemap_topics = parse_sitemap_topics(sitemap_url) if sitemap_url else []
 
     if "brief" not in st.session_state:
         if st.button("✅ Generate SEO Brief"):
-            with st.spinner("Creating brief..."):
+            with st.spinner("🧠 Creating content brief..."):
                 brief = generate_brief(scraped, query, company_name, company_url, sitemap_topics)
                 st.session_state["brief"] = brief
 
@@ -218,7 +219,7 @@ if query and company_name and company_url:
         outline_input = st.text_area("Edit or approve outline", value=default_outline, height=300)
 
         if st.button("🚀 Generate Article"):
-            with st.spinner("Writing article..."):
+            with st.spinner("✍️ Writing article..."):
                 article = generate_article(company_name, company_url, outline_input)
             st.session_state["article"] = article
 
@@ -228,6 +229,6 @@ if query and company_name and company_url:
         st.download_button("📥 Download Article", st.session_state["article"], file_name=f"{query.replace(' ', '_')}_article.txt")
         feedback = st.text_area("✍️ Suggest changes to improve content")
         if st.button("🔄 Apply Feedback and Rewrite"):
-            with st.spinner("Rewriting article..."):
+            with st.spinner("🔁 Rewriting based on feedback..."):
                 improved = generate_article(company_name, company_url, outline_input, feedback=feedback)
             st.session_state["article"] = improved
