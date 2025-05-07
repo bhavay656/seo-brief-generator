@@ -1,4 +1,4 @@
-# --- SEO Brief Generator (Streamlit App) ---
+# Save as app.py
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
@@ -15,7 +15,6 @@ scraperapi_key = st.secrets["scraperapi_key"]
 st.set_page_config(page_title="SEO Brief Generator", layout="wide")
 st.title("SEO Brief Generator")
 
-# --- Inputs ---
 keyword = st.text_input("Target Keyword (optional)")
 topic = st.text_input("Content Topic (optional)")
 company_name = st.text_input("Company name")
@@ -28,36 +27,26 @@ if not query:
     st.warning("Please enter either a keyword or content topic.")
     st.stop()
 
-# --- Deduplicate by Domain ---
-def deduplicate_urls_by_domain(url_list, min_urls=10):
-    seen_domains = set()
-    unique_urls, extras = [], []
-    for url in url_list:
-        domain = urlparse(url).netloc.replace("www.", "")
-        if domain not in seen_domains:
-            seen_domains.add(domain)
-            unique_urls.append(url)
-        else:
-            extras.append(url)
-    for url in extras:
-        if len(unique_urls) >= min_urls:
-            break
-        unique_urls.append(url)
-    return unique_urls
-
-# --- Bing Search ---
-def fetch_bing_urls(query):
+def fetch_bing_urls_unique(query, min_count=10):
     headers = {"User-Agent": "Mozilla/5.0"}
+    seen_domains = set()
+    unique_urls = []
     try:
         r = requests.get(f"https://www.bing.com/search?q={query}", headers=headers, timeout=10)
         soup = BeautifulSoup(r.text, "html.parser")
         links = [a["href"] for a in soup.select("li.b_algo h2 a") if a["href"].startswith("http")]
-        return deduplicate_urls_by_domain(links)
+        for link in links:
+            domain = urlparse(link).netloc.replace("www.", "")
+            if domain not in seen_domains:
+                seen_domains.add(domain)
+                unique_urls.append(link)
+            if len(unique_urls) >= min_count:
+                break
+        return unique_urls
     except:
-        st.error("❌ Bing SERP scraping failed.")
         return []
 
-# --- ScraperAPI ---
+# Scrape with ScraperAPI
 def scrape_with_scraperapi(url, retries=3):
     attempt = 0
     while attempt < retries:
@@ -80,9 +69,10 @@ def scrape_with_scraperapi(url, retries=3):
             time.sleep(2)
     return None
 
+# Parallel scrape
 def batch_scrape(urls):
     scraped_pages = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
         future_to_url = {executor.submit(scrape_with_scraperapi, url): url for url in urls}
         for future in concurrent.futures.as_completed(future_to_url):
             result = future.result()
@@ -90,7 +80,7 @@ def batch_scrape(urls):
                 scraped_pages.append(result)
     return scraped_pages
 
-# --- Sitemap Topic Suggestion ---
+# Sitemap topics
 def parse_sitemap_topics(sitemap_url):
     try:
         r = requests.get(sitemap_url, timeout=10)
@@ -101,18 +91,20 @@ def parse_sitemap_topics(sitemap_url):
     except:
         return []
 
-# --- Page Insight ---
+# Generate insight
 def get_serp_insight(page):
-    title, meta, headings = page.get("title", ""), page.get("meta", ""), page.get("headings", [])
+    title = page.get("title", "")
+    meta = page.get("meta", "")
+    headings = page.get("headings", [])
     if not title and not meta and not headings:
-        return {"tldr": "❌ Not enough content."}
+        return {"tldr": "❌ Not enough usable content."}
     prompt = f"""
 You are an SEO strategist.
 
-Analyze the following content and return:
+Analyze the following page and give:
 1. TLDR (1–2 lines)
-2. Context (summary of what it covers)
-3. Unique hook/angle
+2. Context (What this page covers and how)
+3. Unique hook or angle
 
 Title: {title}
 Meta: {meta}
@@ -131,43 +123,38 @@ Headings:
 # --- Main Logic ---
 if query and company_name and company_url:
     if "urls" not in st.session_state:
-        urls = fetch_bing_urls(query)
+        urls = fetch_bing_urls_unique(query)
+        if len(urls) < 10:
+            st.warning("Fewer than 10 URLs from unique domains were found. Please add more manually.")
         if manual_urls:
             urls += [u.strip() for u in manual_urls.split(",") if u.strip()]
-        urls = deduplicate_urls_by_domain(list(dict.fromkeys(urls)), min_urls=10)
-        if not urls:
-            st.warning("⚠️ No URLs found.")
-            st.stop()
-        st.session_state["urls"] = urls
+        st.session_state["urls"] = list(dict.fromkeys(urls))
 
     st.markdown("### 🔗 Top SERP + Reference URLs")
     for u in st.session_state["urls"]:
         st.markdown(f"- [{u}]({u})")
 
-    confirmed = st.checkbox("✅ I've reviewed the URLs. Proceed to scrape content.")
-
-    if confirmed and "scraped" not in st.session_state:
-        with st.spinner("🔍 Scraping all pages in parallel..."):
+    if st.checkbox("✅ I've reviewed the URLs. Proceed to scrape content.") and "scraped" not in st.session_state:
+        with st.spinner("🔍 Scraping in progress..."):
             st.session_state["scraped"] = batch_scrape(st.session_state["urls"])
 
-    scraped = st.session_state.get("scraped", [])
-    sitemap_topics = parse_sitemap_topics(sitemap_url) if sitemap_url else []
-
-    if scraped and "insights" not in st.session_state:
-        with st.spinner("📊 Generating SERP insights..."):
-            st.session_state["insights"] = []
-            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-                futures = {executor.submit(get_serp_insight, p): p for p in scraped}
-                for future in concurrent.futures.as_completed(futures):
-                    page = futures[future]
-                    insight = future.result()
-                    st.session_state["insights"].append({
-                        "url": page["url"],
-                        "title": page["title"],
-                        "meta": page["meta"],
-                        "headings": page["headings"],
-                        "tldr": insight.get("tldr", "")
-                    })
+    if "scraped" in st.session_state:
+        sitemap_topics = parse_sitemap_topics(sitemap_url) if sitemap_url else []
+        if "insights" not in st.session_state:
+            with st.spinner("📊 Generating SERP insights..."):
+                st.session_state["insights"] = []
+                with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                    futures = {executor.submit(get_serp_insight, p): p for p in st.session_state["scraped"]}
+                    for future in concurrent.futures.as_completed(futures):
+                        page = futures[future]
+                        insight = future.result()
+                        st.session_state["insights"].append({
+                            "url": page["url"],
+                            "title": page["title"],
+                            "meta": page["meta"],
+                            "headings": page["headings"],
+                            "tldr": insight["tldr"]
+                        })
 
     if "insights" in st.session_state:
         st.markdown("### 🔍 SERP Insights")
@@ -175,7 +162,7 @@ if query and company_name and company_url:
             st.markdown(f"**URL:** [{p['url']}]({p['url']})")
             st.markdown(f"**Title:** {p['title']}")
             st.markdown(f"**Meta:** {p['meta']}")
-            st.markdown("**Headings:**")
+            st.markdown("**Headings (Document Flow):**")
             for h in p["headings"]:
                 indent = "  " if h.startswith("H4") else " " if h.startswith("H3") else ""
                 st.markdown(f"{indent}- {h}")
@@ -183,10 +170,9 @@ if query and company_name and company_url:
             st.markdown("---")
 
         if st.button("✅ Generate SEO Brief"):
-            with st.spinner("✍️ Creating content brief..."):
-                data = st.session_state["insights"]
+            with st.spinner("🧠 Compiling brief..."):
                 extracted = ""
-                for p in data:
+                for p in st.session_state["insights"]:
                     extracted += f"""URL: {p['url']}
 Title: {p['title']}
 Meta: {p['meta']}
@@ -204,19 +190,19 @@ Generate a complete SEO content brief for:
 Topic: {query}
 Company: {company_name} ({company_url})
 
-Use only:
+Based only on:
 {extracted}
 
 Include:
 - Primary keyword
 - Secondary keywords
-- NLP/semantic keywords
+- NLP & semantic keywords
 - Search intent
-- Suggested unique angle
-- Structured H1, H2, H3 with context
+- Unique angle
+- Structured H1, H2, H3 (with context under each)
 - {internal_line}
-Minimum content length: 1800 words.
-Avoid fluff or AI tone.
+Minimum article word count: 1800+
+Avoid fluff, filler, and generic AI tone.
 """
                 res = client.chat.completions.create(
                     model="gpt-4",
@@ -235,7 +221,11 @@ Avoid fluff or AI tone.
         outline_input = st.text_area("Edit or approve outline", value=default_outline, height=300)
 
         if st.button("🚀 Generate Article"):
-            prompt = f"""Write a clear, helpful 1800+ word article for {company_name} using the outline below:\n\n{outline_input}"""
+            prompt = f"""
+Write a clear, human article of 1800+ words for {company_name} based on this outline:
+
+{outline_input}
+"""
             res = client.chat.completions.create(
                 model="gpt-4",
                 messages=[{"role": "user", "content": prompt}]
@@ -246,9 +236,13 @@ Avoid fluff or AI tone.
         st.subheader("📝 Generated Article")
         st.text_area("SEO Article", st.session_state["article"], height=800)
         st.download_button("📥 Download Article", st.session_state["article"], file_name=f"{query.replace(' ', '_')}_article.txt")
-        feedback = st.text_area("✍️ Suggest feedback to improve article")
+        feedback = st.text_area("✍️ Suggest edits to improve content")
         if st.button("🔄 Apply Feedback"):
-            prompt = f"""Revise this article based on the feedback below:\n\nFeedback: {feedback}\n\nArticle:\n{st.session_state["article"]}"""
+            prompt = f"""Revise the article below based on feedback: {feedback}
+
+Article:
+{st.session_state["article"]}
+"""
             res = client.chat.completions.create(
                 model="gpt-4",
                 messages=[{"role": "user", "content": prompt}]
