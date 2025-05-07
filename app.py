@@ -2,58 +2,43 @@
 import streamlit as st
 import requests
 from bs4 import BeautifulSoup
+import re
+import time
+import concurrent.futures
 import xml.etree.ElementTree as ET
 from urllib.parse import urlparse
-from openai import OpenAI
-import concurrent.futures
-import time
-import re
+import openai
 
-client = OpenAI(api_key=st.secrets["openai_api_key"])
-scraperapi_key = st.secrets["scraperapi_key"]
+openai.api_key = st.secrets["OPENAI_API_KEY"]
+scraperapi_key = st.secrets["SCRAPERAPI_KEY"]
 
-st.set_page_config(page_title="SEO Brief Generator", layout="wide")
-st.title("SEO Brief Generator")
+def fetch_bing_urls(query, max_results=10):
+    headers = {"Ocp-Apim-Subscription-Key": st.secrets["BING_API_KEY"]}
+    params = {"q": query, "count": 20}
+    endpoint = "https://api.bing.microsoft.com/v7.0/search"
+    domains = set()
+    urls = []
 
-# User Inputs
-keyword = st.text_input("Target Keyword (optional)")
-topic = st.text_input("Content Topic (optional)")
-company_name = st.text_input("Company name")
-company_url = st.text_input("Website URL (for internal links)")
-sitemap_url = st.text_input("Sitemap.xml URL (for topic suggestions)")
-
-query = keyword or topic
-if not query:
-    st.warning("Please enter either a keyword or content topic.")
-    st.stop()
-
-# Bing Scraper
-def fetch_bing_unique_urls(query, max_domains=10):
-    headers = {"User-Agent": "Mozilla/5.0"}
     try:
-        r = requests.get(f"https://www.bing.com/search?q={query}", headers=headers, timeout=10)
-        soup = BeautifulSoup(r.text, "html.parser")
-        seen_domains = set()
-        unique_urls = []
-        for a in soup.select("li.b_algo h2 a"):
-            href = a["href"]
-            domain = urlparse(href).netloc.replace("www.", "")
-            if href.startswith("http") and domain not in seen_domains:
-                seen_domains.add(domain)
-                unique_urls.append(href)
-            if len(unique_urls) >= max_domains:
+        res = requests.get(endpoint, headers=headers, params=params).json()
+        for item in res.get("webPages", {}).get("value", []):
+            domain = urlparse(item["url"]).netloc
+            if domain not in domains:
+                domains.add(domain)
+                urls.append(item["url"])
+            if len(urls) >= max_results:
                 break
-        return unique_urls
-    except:
-        return []
+    except Exception as e:
+        st.warning(f"Bing scraping failed: {e}")
+    return urls
 
 def scrape_with_scraperapi(url, retries=3):
     attempt = 0
     while attempt < retries:
         try:
             full_url = f"http://api.scraperapi.com?api_key={scraperapi_key}&url={url}"
-            r = requests.get(full_url, timeout=20)
-            soup = BeautifulSoup(r.text, "html.parser")
+            r = requests.get(full_url, timeout=15)
+            soup = BeautifulSoup(r.content, "html.parser")
             title = soup.title.string.strip() if soup.title else ""
             meta = soup.find("meta", attrs={"name": "description"})
             meta_desc = meta["content"].strip() if meta and "content" in meta.attrs else ""
@@ -69,171 +54,111 @@ def scrape_with_scraperapi(url, retries=3):
             time.sleep(2)
     return None
 
-def batch_scrape(urls):
-    scraped_pages = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
-        future_to_url = {executor.submit(scrape_with_scraperapi, url): url for url in urls}
-        for future in concurrent.futures.as_completed(future_to_url):
-            result = future.result()
-            if result:
-                scraped_pages.append(result)
-    return scraped_pages
+def batch_scrape(urls, batch_size=4):
+    scraped = []
+    for i in range(0, len(urls), batch_size):
+        with concurrent.futures.ThreadPoolExecutor(max_workers=batch_size) as executor:
+            batch = urls[i:i+batch_size]
+            future_to_url = {executor.submit(scrape_with_scraperapi, url): url for url in batch}
+            for future in concurrent.futures.as_completed(future_to_url):
+                result = future.result()
+                if result:
+                    scraped.append(result)
+    return scraped
 
-def parse_sitemap_topics(sitemap_url):
-    try:
-        r = requests.get(sitemap_url, timeout=10)
-        tree = ET.fromstring(r.content)
-        urls = [elem[0].text for elem in tree.findall("{http://www.sitemaps.org/schemas/sitemap/0.9}url")]
-        topics = [urlparse(url).path.strip("/").replace("-", " ").title() for url in urls if url]
-        return list(set(topics))[:15]
-    except:
-        return []
+def get_serp_insight(scraped):
+    insights = []
+    for s in scraped:
+        insight = {
+            "url": s["url"],
+            "title": s["title"],
+            "meta": s["meta"],
+            "tldr": s["meta"][:250],
+            "headings": s["headings"][:10]
+        }
+        insights.append(insight)
+    return insights
 
-def get_serp_insight(page):
-    title = page.get("title", "").strip()
-    meta = page.get("meta", "").strip()
-    headings = page.get("headings", [])
+def generate_brief_and_content(insights, keyword, topic):
+    heading_list = []
+    for entry in insights:
+        heading_list.extend(entry["headings"])
 
-    if not title and not meta and not headings:
-        return {"tldr": "❌ Not enough usable content."}
+    prompt = (
+        "You're an expert SEO writer. Based on these competitor insights and headings, create a brief followed by a 2000+ word article.
 
-    prompt = f"""
-You are an SEO strategist.
+"
+        f"- Topic: {topic}
+"
+        f"- Keyword: {keyword}
+"
+        "- Include all headings (H1–H4)
+"
+        "- Keep keyword density <3%
+"
+        "- Avoid AI-like phrases (delve, landscape, evolving, indeed, etc.)
+"
+        "- Add conversational FAQs within the flow
+"
+        "- Avoid fluffy intros, go straight to the point
+"
+        "- No keyword stuffing
 
-Analyze the following page and give:
-1. TLDR (1–2 lines)
-2. Context (What this page covers and how)
-3. Unique hook or angle
+"
+        "Headings:
+" + "
+".join(heading_list) + "
 
-Title: {title}
-Meta: {meta}
-Headings:
-{chr(10).join(headings)}
-"""
-    try:
-        res = client.chat.completions.create(
-            model="gpt-4",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return {"tldr": res.choices[0].message.content.strip()}
-    except Exception as e:
-        return {"tldr": f"❌ OpenAI error: {e}"}
+" +
+        "Insights:
+" + "
+".join(i['tldr'] for i in insights)
+    )
 
-# Main Logic
-if query and company_name and company_url:
-    if "urls" not in st.session_state:
-        scraped_urls = fetch_bing_unique_urls(query, max_domains=10)
-        if len(scraped_urls) < 5:
-            st.warning("Bing scraping failed or gave <5 unique domains. Please paste at least 5 manual URLs below.")
-        elif len(scraped_urls) < 10:
-            st.info("You can optionally add more URLs below to improve coverage.")
-        st.session_state["urls"] = scraped_urls
+    response = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[{"role": "user", "content": prompt}]
+    )
+    return response["choices"][0]["message"]["content"]
 
-    if st.session_state.get("urls"):
-        st.markdown("### 🔗 Top SERP + Reference URLs")
-        for u in st.session_state["urls"]:
-            st.markdown(f"- [{u}]({u})")
+# Streamlit UI
+st.title("SEO Brief Generator")
 
-        additional_urls = st.text_area("Add reference URLs manually (comma-separated)", key="manual")
-        if additional_urls:
-            st.session_state["urls"] += [url.strip() for url in additional_urls.split(",") if url.strip()]
-            st.session_state["urls"] = list(dict.fromkeys(st.session_state["urls"]))  # deduplicate
+keyword = st.text_input("Target Keyword (optional)")
+topic = st.text_input("Content Topic (optional)")
+company = st.text_input("Company name")
+company_url = st.text_input("Website URL (for internal links)")
+sitemap_url = st.text_input("Sitemap.xml URL (for topic suggestions)")
 
-        confirmed = st.checkbox("✅ I've reviewed the URLs. Proceed to scrape content.")
-        if confirmed and "scraped" not in st.session_state:
-            with st.spinner("🔍 Scraping all pages in parallel..."):
-                st.session_state["scraped"] = batch_scrape(st.session_state["urls"])
+scraped_urls = []
+if keyword or topic:
+    with st.spinner("Scraping Bing for SERPs..."):
+        scraped_urls = fetch_bing_urls(keyword or topic)
 
-    sitemap_topics = parse_sitemap_topics(sitemap_url) if sitemap_url else []
-    scraped = st.session_state.get("scraped", [])
+if scraped_urls and len(scraped_urls) >= 5:
+    st.markdown("### 🔗 Top SERP + Reference URLs")
+    for url in scraped_urls:
+        st.markdown(f"- [{url}]({url})")
 
-    if scraped and "insights" not in st.session_state:
-        with st.spinner("📊 Generating insights from scraped content..."):
-            st.session_state["insights"] = []
-            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-                futures = {executor.submit(get_serp_insight, p): p for p in scraped}
-                for future in concurrent.futures.as_completed(futures):
-                    page = futures[future]
-                    insight = future.result()
-                    st.session_state["insights"].append({
-                        "url": page["url"],
-                        "title": page["title"],
-                        "meta": page["meta"],
-                        "headings": page["headings"],
-                        "tldr": insight.get("tldr", "")
-                    })
+    if len(scraped_urls) < 10:
+        st.info("You can optionally add more URLs below to improve coverage.")
+    manual_urls = st.text_area("Add reference URLs manually (comma-separated)")
+    url_list = scraped_urls + [u.strip() for u in manual_urls.split(",") if u.strip()]
 
-    if "insights" in st.session_state:
-        st.markdown("### 🔍 SERP Insights")
-        for p in st.session_state["insights"]:
-            st.markdown(f"**URL:** [{p['url']}]({p['url']})")
-            st.markdown(f"**Title:** {p['title']}")
-            st.markdown(f"**Meta:** {p['meta']}")
-            st.markdown("**Headings (Document Flow):**")
-            for h in p["headings"]:
-                indent = "  " if h.startswith("H4") else " " if h.startswith("H3") else ""
-                st.markdown(f"{indent}- {h}")
-            st.markdown(f"**Insight:** {p['tldr']}")
-            st.markdown("---")
-
-        if st.button("✍️ Generate SEO Article"):
-            with st.spinner("🧠 Generating complete brief and content..."):
-                from_insights = st.session_state["insights"]
-                extracted = ""
-                for p in from_insights:
-                    extracted += f"""URL: {p['url']}
-Title: {p['title']}
-Meta: {p['meta']}
-Headings:
-{chr(10).join(p['headings'])}
-Context: {p['tldr']}
----
-"""
-                internal_line = f"Internal linking topics: {', '.join(sitemap_topics)}." if sitemap_topics else ""
-                prompt = f"""
-You are an expert SEO strategist.
-
-Generate a detailed SEO content brief and final article for:
-
-Topic: {query}
-Company: {company_name} ({company_url})
-
-Content rules:
-- Word count minimum: 2000+
-- Short intro (max 2 paras)
-- Include FAQs at end
-- No fluff or filler
-- Avoid all LLM phrases and patterns (e.g., "in fact", "clearly", "holistic", etc.)
-- Maintain keyword density under 3%
-- Natural, human tone
-
-Use the following insights:
-{extracted}
-
-{internal_line}
-"""
-                res = client.chat.completions.create(
-                    model="gpt-4",
-                    messages=[{"role": "user", "content": prompt}]
-                )
-                article = res.choices[0].message.content.strip()
-                st.session_state["article"] = article
-
-    if "article" in st.session_state:
-        st.subheader("📝 SEO Article")
-        st.text_area("Generated Article", st.session_state["article"], height=800)
-        st.download_button("📥 Download Article", st.session_state["article"], file_name=f"{query.replace(' ', '_')}_article.txt")
-        feedback = st.text_area("✍️ Suggest edits to improve content")
-        if st.button("🔄 Apply Feedback"):
-            prompt = f"""Revise the article below based on feedback: {feedback}
-
-Article:
-{st.session_state["article"]}
-"""
-            res = client.chat.completions.create(
-                model="gpt-4",
-                messages=[{"role": "user", "content": prompt}]
+    proceed = st.checkbox("✅ I've reviewed the URLs. Proceed to scrape content.")
+    if proceed:
+        with st.spinner("Scraping content..."):
+            scraped = batch_scrape(url_list[:10])
+            insights = get_serp_insight(scraped)
+            st.markdown("### ✍️ Review the Brief Below")
+            brief_draft = "\n\n".join(
+                [f"**{i['title']}**\n{i['meta']}\n" + "\n".join(i['headings']) for i in insights]
             )
-            st.session_state["article"] = res.choices[0].message.content.strip()
-            st.markdown("✅ **Updated article below:**")
-            st.text_area("Updated Article", st.session_state["article"], height=800)
+            updated_brief = st.text_area("Edit Brief if Needed:", brief_draft, height=300)
+            if st.button("✍️ Generate SEO Article"):
+                with st.spinner("🧠 Generating final content..."):
+                    article = generate_brief_and_content(insights, keyword, topic)
+                    st.markdown("### ✅ Final Article")
+                    st.markdown(article)
+else:
+    st.warning("Bing scraping failed or returned <5 domains. Please enter at least 5 URLs manually.")
