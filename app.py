@@ -21,7 +21,6 @@ company_name = st.text_input("Company name")
 company_url = st.text_input("Website URL (for internal links)")
 sitemap_url = st.text_input("Sitemap.xml URL (for topic suggestions)")
 manual_urls = st.text_area("Add reference URLs manually (optional, comma-separated)")
-confirmed = st.checkbox("✅ I've reviewed URLs. Proceed to scrape pages.")
 
 query = keyword or topic
 if not query:
@@ -113,5 +112,55 @@ Headings:
     except Exception as e:
         return {"tldr": f"❌ OpenAI error: {e}"}
 
-# Streamlit flow continues below
-# (for brevity in this code cell, truncated after helper functions)
+# --- Execution Logic ---
+
+if query and company_name and company_url:
+    if "urls" not in st.session_state:
+        scraped_urls = fetch_bing_urls(query)
+        if manual_urls:
+            scraped_urls += [url.strip() for url in manual_urls.split(",") if url.strip()]
+        scraped_urls = list(dict.fromkeys(scraped_urls))  # remove duplicates
+        st.session_state["urls"] = scraped_urls
+
+    if st.session_state["urls"]:
+        st.markdown("### 🔗 Top SERP + Reference URLs")
+        for u in st.session_state["urls"]:
+            st.markdown(f"- [{u}]({u})")
+
+        confirmed = st.checkbox("✅ I’ve reviewed the URLs. Proceed to scrape content.", key="confirm_urls")
+
+        if confirmed and "scraped" not in st.session_state:
+            with st.spinner("🔍 Scraping all pages in parallel..."):
+                st.session_state["scraped"] = batch_scrape(st.session_state["urls"])
+
+    scraped = st.session_state.get("scraped", [])
+    sitemap_topics = parse_sitemap_topics(sitemap_url) if sitemap_url else []
+
+    if scraped and "insights" not in st.session_state:
+        with st.spinner("📊 Generating insights from scraped content..."):
+            st.session_state["insights"] = []
+            with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+                futures = {executor.submit(get_serp_insight, p): p for p in scraped}
+                for future in concurrent.futures.as_completed(futures):
+                    page = futures[future]
+                    insight = future.result()
+                    st.session_state["insights"].append({
+                        "url": page["url"],
+                        "title": page["title"],
+                        "meta": page["meta"],
+                        "headings": page["headings"],
+                        "tldr": insight.get("tldr", "")
+                    })
+
+    if "insights" in st.session_state:
+        st.markdown("### 🔍 SERP Insights")
+        for p in st.session_state["insights"]:
+            st.markdown(f"**URL:** [{p['url']}]({p['url']})")
+            st.markdown(f"**Title:** {p['title']}")
+            st.markdown(f"**Meta:** {p['meta']}")
+            st.markdown("**Headings (Document Flow):**")
+            for h in p["headings"]:
+                indent = "  " if h.startswith("H4") else " " if h.startswith("H3") else ""
+                st.markdown(f"{indent}- {h}")
+            st.markdown(f"**Insight:** {p['tldr']}")
+            st.markdown("---")
